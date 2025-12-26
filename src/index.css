@@ -1,0 +1,56 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  direction: rtl;
+}
+
+/* RTL adjustments for Mapbox controls */
+.mapboxgl-ctrl-top-left {
+  left: auto !important;
+  right: auto !important;
+}
+
+.mapboxgl-ctrl-bottom-left {
+  left: 10px !important;
+  right: auto !important;
+}
+
+/* ESRI SceneView adjustments */
+.esri-ui-corner {
+  direction: ltr;
+}
+
+.esri-view {
+  height: 100% !important;
+}
+
+/* Hide ESRI default widgets that we don't need */
+.esri-attribution {
+  direction: ltr;
+}
+
+/* Custom scrollbar for RTL panels */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
