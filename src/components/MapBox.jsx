@@ -21,6 +21,7 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
   const isMapLoaded = useRef(false)
   const isActiveRef = useRef(isActive)
   const powerLinesLayerAdded = useRef(false)
+  const religiousBuildingsLayerAdded = useRef(false)
 
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
@@ -185,6 +186,194 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
         powerLinesLayerAdded.current = true
         console.log('✓ Mapbox: Power lines layer added')
       }
+
+      // Add Religious Buildings layer from GeoJSON
+      const religiousBuildingsConfig = LAYERS_CONFIG.find(l => l.id === 'religious-buildings')
+      if (religiousBuildingsConfig) {
+        map.current.addSource('religious-buildings', {
+          type: 'geojson',
+          data: '/data/religious-buildings.geojson',
+          cluster: true,
+          clusterMaxZoom: 14,
+          clusterRadius: 50
+        })
+
+        // Clustered circles
+        map.current.addLayer({
+          id: 'religious-buildings-clusters',
+          type: 'circle',
+          source: 'religious-buildings',
+          filter: ['has', 'point_count'],
+          layout: {
+            'visibility': 'none'
+          },
+          paint: {
+            'circle-color': [
+              'step',
+              ['get', 'point_count'],
+              '#8b5cf6',  // Purple for small clusters
+              10, '#7c3aed',
+              50, '#6d28d9',
+              100, '#5b21b6'
+            ],
+            'circle-radius': [
+              'step',
+              ['get', 'point_count'],
+              15,
+              10, 20,
+              50, 25,
+              100, 30
+            ],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#fff'
+          }
+        })
+
+        // Cluster count labels
+        map.current.addLayer({
+          id: 'religious-buildings-cluster-count',
+          type: 'symbol',
+          source: 'religious-buildings',
+          filter: ['has', 'point_count'],
+          layout: {
+            'text-field': '{point_count_abbreviated}',
+            'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+            'text-size': 12,
+            'visibility': 'none'
+          },
+          paint: {
+            'text-color': '#ffffff'
+          }
+        })
+
+        // Individual religious building markers
+        map.current.addLayer({
+          id: 'religious-buildings-layer',
+          type: 'circle',
+          source: 'religious-buildings',
+          filter: ['!', ['has', 'point_count']],
+          layout: {
+            'visibility': 'none'
+          },
+          paint: {
+            'circle-color': [
+              'match',
+              ['get', 'religion'],
+              'jewish', '#0ea5e9',      // Blue - Synagogue
+              'christian', '#f59e0b',   // Amber - Church
+              'muslim', '#10b981',      // Green - Mosque
+              'buddhist', '#f97316',    // Orange - Buddhist Temple
+              'hindu', '#ef4444',       // Red - Hindu Temple
+              'shinto', '#ec4899',      // Pink - Shinto Shrine
+              '#8b5cf6'                  // Purple - Default
+            ],
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              10, 4,
+              14, 8,
+              18, 12
+            ],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ffffff',
+            'circle-opacity': 0.9
+          }
+        })
+
+        // Add labels for individual buildings
+        map.current.addLayer({
+          id: 'religious-buildings-labels',
+          type: 'symbol',
+          source: 'religious-buildings',
+          filter: ['!', ['has', 'point_count']],
+          minzoom: 14,
+          layout: {
+            'text-field': ['get', 'name'],
+            'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Regular'],
+            'text-size': 11,
+            'text-offset': [0, 1.5],
+            'text-anchor': 'top',
+            'text-max-width': 10,
+            'visibility': 'none'
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': 'rgba(0,0,0,0.8)',
+            'text-halo-width': 1.5
+          }
+        })
+
+        // Add click popup for religious buildings
+        map.current.on('click', 'religious-buildings-layer', (e) => {
+          if (!e.features || e.features.length === 0) return
+          
+          const feature = e.features[0]
+          const props = feature.properties
+          const coordinates = feature.geometry.coordinates.slice()
+          
+          // Icon based on religion
+          const icons = {
+            jewish: '🕍',
+            christian: '⛪',
+            muslim: '🕌',
+            buddhist: '🛕',
+            hindu: '🛕',
+            shinto: '⛩️',
+            unknown: '🏛️'
+          }
+          const icon = icons[props.religion] || '🏛️'
+          
+          const html = `
+            <div style="direction: rtl; font-family: system-ui; min-width: 180px;">
+              <div style="font-size: 24px; text-align: center; margin-bottom: 8px;">${icon}</div>
+              <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">${props.name || props.nameHe || 'מבנה דת'}</div>
+              <div style="color: #666; font-size: 12px; margin-bottom: 4px;">${props.religionDisplay || ''}</div>
+              ${props.denomination ? `<div style="font-size: 11px; color: #888;">זרם: ${props.denomination}</div>` : ''}
+              ${props.address ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">📍 ${props.address}</div>` : ''}
+            </div>
+          `
+          
+          new mapboxgl.Popup()
+            .setLngLat(coordinates)
+            .setHTML(html)
+            .addTo(map.current)
+        })
+
+        // Change cursor on hover
+        map.current.on('mouseenter', 'religious-buildings-layer', () => {
+          map.current.getCanvas().style.cursor = 'pointer'
+        })
+        map.current.on('mouseleave', 'religious-buildings-layer', () => {
+          map.current.getCanvas().style.cursor = ''
+        })
+
+        // Click on cluster to zoom in
+        map.current.on('click', 'religious-buildings-clusters', (e) => {
+          const features = map.current.queryRenderedFeatures(e.point, {
+            layers: ['religious-buildings-clusters']
+          })
+          const clusterId = features[0].properties.cluster_id
+          map.current.getSource('religious-buildings').getClusterExpansionZoom(
+            clusterId,
+            (err, zoom) => {
+              if (err) return
+              map.current.easeTo({
+                center: features[0].geometry.coordinates,
+                zoom: zoom
+              })
+            }
+          )
+        })
+
+        map.current.on('mouseenter', 'religious-buildings-clusters', () => {
+          map.current.getCanvas().style.cursor = 'pointer'
+        })
+        map.current.on('mouseleave', 'religious-buildings-clusters', () => {
+          map.current.getCanvas().style.cursor = ''
+        })
+
+        religiousBuildingsLayerAdded.current = true
+        console.log('✓ Mapbox: Religious buildings layer added')
+      }
     })
 
     map.current.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-left')
@@ -267,27 +456,52 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
 
   // Handle layer visibility changes from LayersPanel
   useEffect(() => {
-    if (!map.current || !isMapLoaded.current || !powerLinesLayerAdded.current) return
+    if (!map.current || !isMapLoaded.current) return
 
     const powerLinesVisible = layers['power-lines']?.visible
+    const religiousBuildingsVisible = layers['religious-buildings']?.visible
 
     // Toggle power lines layer visibility
-    const visibility = powerLinesVisible ? 'visible' : 'none'
-    
-    if (map.current.getLayer('power-lines-layer')) {
-      map.current.setLayoutProperty('power-lines-layer', 'visibility', visibility)
+    if (powerLinesLayerAdded.current) {
+      const powerVisibility = powerLinesVisible ? 'visible' : 'none'
+      
+      if (map.current.getLayer('power-lines-layer')) {
+        map.current.setLayoutProperty('power-lines-layer', 'visibility', powerVisibility)
+      }
+      if (map.current.getLayer('power-lines-glow')) {
+        map.current.setLayoutProperty('power-lines-glow', 'visibility', powerVisibility)
+      }
+      console.log(`Mapbox Layer "power-lines": ${powerLinesVisible ? 'visible' : 'hidden'}`)
     }
-    if (map.current.getLayer('power-lines-glow')) {
-      map.current.setLayoutProperty('power-lines-glow', 'visibility', visibility)
+
+    // Toggle religious buildings layer visibility
+    if (religiousBuildingsLayerAdded.current) {
+      const religiousVisibility = religiousBuildingsVisible ? 'visible' : 'none'
+      
+      if (map.current.getLayer('religious-buildings-clusters')) {
+        map.current.setLayoutProperty('religious-buildings-clusters', 'visibility', religiousVisibility)
+      }
+      if (map.current.getLayer('religious-buildings-cluster-count')) {
+        map.current.setLayoutProperty('religious-buildings-cluster-count', 'visibility', religiousVisibility)
+      }
+      if (map.current.getLayer('religious-buildings-layer')) {
+        map.current.setLayoutProperty('religious-buildings-layer', 'visibility', religiousVisibility)
+      }
+      if (map.current.getLayer('religious-buildings-labels')) {
+        map.current.setLayoutProperty('religious-buildings-labels', 'visibility', religiousVisibility)
+      }
+      console.log(`Mapbox Layer "religious-buildings": ${religiousBuildingsVisible ? 'visible' : 'hidden'}`)
     }
 
     // When power lines are visible, hide all non-essential layers
-    // Keep only: satellite imagery (raster), 3D tiles, sky, and power lines
+    // Keep only: satellite imagery (raster), 3D tiles, sky, and our custom layers
     const style = map.current.getStyle()
     if (style && style.layers) {
       style.layers.forEach(layer => {
         // Skip our own layers
-        if (layer.id === 'power-lines-layer' || layer.id === 'power-lines-glow' || layer.id === 'sky') {
+        if (layer.id.startsWith('power-lines') || 
+            layer.id.startsWith('religious-buildings') || 
+            layer.id === 'sky') {
           return
         }
 
@@ -313,10 +527,10 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
         }
       })
       
-      console.log(`Mapbox: Basemap layers ${powerLinesVisible ? 'hidden' : 'visible'} (power lines ${powerLinesVisible ? 'on' : 'off'})`)
+      if (powerLinesVisible) {
+        console.log(`Mapbox: Basemap layers hidden (power lines on)`)
+      }
     }
-
-    console.log(`Mapbox Layer "power-lines": ${powerLinesVisible ? 'visible' : 'hidden'}`)
   }, [layers])
 
   return (

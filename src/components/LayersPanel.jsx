@@ -13,6 +13,17 @@ export const LAYERS_CONFIG = [
     // Data fetched dynamically from OpenStreetMap Overpass API
     elevationHeight: 15, // meters above ground
     opacity: 1
+  },
+  {
+    id: 'religious-buildings',
+    name: 'מבני דת',
+    subtitle: 'בתי כנסת, כנסיות, מסגדים',
+    icon: '🕌',
+    description: 'מבני דת מ-OpenStreetMap: בתי כנסת, כנסיות, מסגדים, מנזרים, מקדשים ומבנים נוספים.',
+    defaultVisible: false,
+    // OSM Places of Worship - point features with icons
+    // Data fetched from OpenStreetMap Overpass API
+    opacity: 1
   }
 ]
 
