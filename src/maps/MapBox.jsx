@@ -316,10 +316,6 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
 
     })
 
-    map.current.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-left')
-    map.current.addControl(new mapboxgl.ScaleControl({ maxWidth: 200, unit: 'metric' }), 'bottom-left')
-    map.current.addControl(new mapboxgl.FullscreenControl(), 'top-left')
-
     return () => {
       if (map.current) {
         map.current.remove()

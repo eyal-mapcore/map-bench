@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react'
+
 // Default view settings
 export const INITIAL_ZOOM = 17
 export const INITIAL_PITCH = 60
@@ -154,149 +156,251 @@ const QualityStars = ({ quality }) => (
   </span>
 )
 
+// Icons
+const ChevronLeft = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 18l-6-6 6-6" />
+  </svg>
+)
+
+const ChevronRight = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 18l6-6-6-6" />
+  </svg>
+)
+
 export function LocationSelector({ currentLocation, onLocationChange, expandedContinent, onContinentToggle }) {
+  const [isOpen, setIsOpen] = useState(window.innerWidth > 768)
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const showPanel = isOpen || !isMobile
+
   return (
     <div style={{
       position: 'absolute',
       top: '10px',
       right: '10px',
-      background: 'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.95) 100%)',
-      borderRadius: '16px',
-      padding: '16px',
       zIndex: 1000,
-      width: '280px',
-      maxHeight: 'calc(100vh - 100px)',
-      overflowY: 'auto',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-      border: '1px solid rgba(255,255,255,0.1)',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      direction: 'rtl'
+      display: 'flex',
+      alignItems: 'flex-start',
+      direction: 'rtl',
+      transform: showPanel ? 'translateX(0)' : 'translateX(290px)',
+      transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      pointerEvents: 'none'
     }}>
-      {/* Header */}
+      {/* Main Content Panel */}
       <div style={{
-        color: '#fff',
-        fontSize: '16px',
-        fontWeight: 'bold',
-        marginBottom: '16px',
-        textAlign: 'center',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '8px',
-        direction: 'rtl'
+        background: 'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.95) 100%)',
+        borderRadius: '16px',
+        padding: '16px',
+        width: '280px',
+        maxHeight: 'calc(100vh - 100px)',
+        overflowY: 'auto',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        pointerEvents: 'auto',
+        position: 'relative'
       }}>
-        <span style={{ fontSize: '20px' }}>📍</span>
-        <span>בחר מיקום</span>
-      </div>
-      
-      {/* Continents */}
-      {Object.entries(CONTINENTS).map(([continentKey, continent]) => (
-        <div key={continentKey} style={{ marginBottom: '12px' }}>
-          {/* Continent Header */}
-          <button
-            onClick={() => onContinentToggle(expandedContinent === continentKey ? null : continentKey)}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              background: expandedContinent === continentKey 
-                ? 'linear-gradient(135deg, rgba(99,102,241,0.3) 0%, rgba(139,92,246,0.3) 100%)'
-                : 'rgba(255,255,255,0.05)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '10px',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              fontSize: '14px',
-              fontWeight: 'bold',
-              textAlign: 'right',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              transition: 'all 0.2s ease',
-              direction: 'rtl'
-            }}
-          >
-            <span>{continent.name}</span>
-            <span style={{ 
-              transform: expandedContinent === continentKey ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
-              opacity: 0.6
-            }}>▼</span>
-          </button>
-          
-          {/* Cities */}
-          {expandedContinent === continentKey && (
-            <div style={{ 
-              marginTop: '8px',
-              paddingRight: '8px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px'
-            }}>
-              {Object.entries(continent.locations).map(([cityKey, city]) => {
-                const isActive = currentLocation.continent === continentKey && currentLocation.city === cityKey
-                return (
-                  <button
-                    key={cityKey}
-                    onClick={() => onLocationChange(continentKey, cityKey)}
-                    style={{
-                      padding: '10px 12px',
-                      background: isActive 
-                        ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' 
-                        : 'rgba(255,255,255,0.05)',
-                      color: '#fff',
-                      border: isActive ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      textAlign: 'right',
-                      transition: 'all 0.2s ease',
-                      boxShadow: isActive ? '0 4px 15px rgba(99,102,241,0.4)' : 'none',
-                      direction: 'rtl'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.1)'
-                        e.currentTarget.style.transform = 'translateX(4px)'
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
-                        e.currentTarget.style.transform = 'translateX(0)'
-                      }
-                    }}
-                  >
-                    <div style={{ 
-                      fontSize: '14px', 
-                      fontWeight: 'bold',
-                      marginBottom: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-start',
-                      gap: '8px'
-                    }}>
-                      <span style={{ fontSize: '16px' }}>{city.icon}</span>
-                      <span>{city.name}</span>
-                      <span style={{ marginRight: 'auto' }}>
-                        <QualityStars quality={city.quality} />
-                      </span>
-                    </div>
-                    <div style={{ 
-                      fontSize: '11px', 
-                      opacity: 0.7,
-                      fontWeight: 'normal',
-                      paddingRight: '24px'
-                    }}>
-                      {city.subtitle}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+        {/* Header */}
+        <div style={{
+          color: '#fff',
+          fontSize: '16px',
+          fontWeight: 'bold',
+          marginBottom: '16px',
+          textAlign: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          direction: 'rtl',
+          position: 'relative',
+          minHeight: '32px'
+        }}>
+          {/* Close Button (Inside Header) - Only on Mobile */}
+          {isMobile && (
+            <button
+              onClick={() => setIsOpen(false)}
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#fff',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                width: '32px',
+                height: '32px'
+              }}
+              title="סגור"
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+            >
+              <ChevronRight />
+            </button>
           )}
+
+          <span>בחר מיקום</span>
         </div>
-      ))}
+        
+        {/* Continents */}
+        {Object.entries(CONTINENTS).map(([continentKey, continent]) => (
+          <div key={continentKey} style={{ marginBottom: '12px' }}>
+            {/* Continent Header */}
+            <button
+              onClick={() => onContinentToggle(expandedContinent === continentKey ? null : continentKey)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                background: expandedContinent === continentKey 
+                  ? 'linear-gradient(135deg, rgba(99,102,241,0.3) 0%, rgba(139,92,246,0.3) 100%)'
+                  : 'rgba(255,255,255,0.05)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                textAlign: 'right',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.2s ease',
+                direction: 'rtl'
+              }}
+            >
+              <span>{continent.name}</span>
+              <span style={{ 
+                transform: expandedContinent === continentKey ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
+                opacity: 0.6
+              }}>▼</span>
+            </button>
+            
+            {/* Cities */}
+            {expandedContinent === continentKey && (
+              <div style={{ 
+                marginTop: '8px',
+                paddingRight: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px'
+              }}>
+                {Object.entries(continent.locations).map(([cityKey, city]) => {
+                  const isActive = currentLocation.continent === continentKey && currentLocation.city === cityKey
+                  return (
+                    <button
+                      key={cityKey}
+                      onClick={() => onLocationChange(continentKey, cityKey)}
+                      style={{
+                        padding: '10px 12px',
+                        background: isActive 
+                          ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' 
+                          : 'rgba(255,255,255,0.05)',
+                        color: '#fff',
+                        border: isActive ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        textAlign: 'right',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isActive ? '0 4px 15px rgba(99,102,241,0.4)' : 'none',
+                        direction: 'rtl'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.1)'
+                          e.currentTarget.style.transform = 'translateX(4px)'
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) {
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                          e.currentTarget.style.transform = 'translateX(0)'
+                        }
+                      }}
+                    >
+                      <div style={{ 
+                        fontSize: '14px', 
+                        fontWeight: 'bold',
+                        marginBottom: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        gap: '8px'
+                      }}>
+                        <span style={{ fontSize: '16px' }}>{city.icon}</span>
+                        <span>{city.name}</span>
+                        <span style={{ marginRight: 'auto' }}>
+                          <QualityStars quality={city.quality} />
+                        </span>
+                      </div>
+                      <div style={{ 
+                        fontSize: '11px', 
+                        opacity: 0.7,
+                        fontWeight: 'normal',
+                        paddingRight: '24px'
+                      }}>
+                        {city.subtitle}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Open Tab (Outside) - Only on Mobile */}
+      {isMobile && (
+        <button
+          onClick={() => setIsOpen(true)}
+          style={{
+            position: 'absolute',
+            right: '100%',
+            top: '20px',
+            background: 'rgba(15,23,42,0.95)',
+            color: '#fff',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRight: 'none',
+            borderRadius: '12px 0 0 12px',
+            width: '40px',
+            height: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '-4px 0 12px rgba(0,0,0,0.2)',
+            pointerEvents: 'auto',
+            transition: 'all 0.3s ease',
+            opacity: isOpen ? 0 : 1,
+            transform: isOpen ? 'translateX(20px)' : 'translateX(0)',
+            visibility: isOpen ? 'hidden' : 'visible'
+          }}
+          title="פתח"
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(30,41,59,0.95)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(15,23,42,0.95)'}
+        >
+          <ChevronLeft />
+        </button>
+      )}
     </div>
   )
 }
