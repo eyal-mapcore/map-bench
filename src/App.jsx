@@ -4,6 +4,7 @@ import MapLibre from './components/MapLibre'
 import MapESRI from './components/MapESRI'
 import MapCesium from './components/MapCesium'
 import { LocationSelector, StatusBar, MapToggle, ViewModeToggle, CONTINENTS } from './components/LocationSelector'
+import { LayersPanel, LAYERS_CONFIG } from './components/LayersPanel'
 
 function App() {
   const [mapType, setMapType] = useState('mapbox') // 'mapbox', 'esri', or 'cesium'
@@ -11,6 +12,15 @@ function App() {
   const [currentLocation, setCurrentLocation] = useState({ continent: 'northAmerica', city: 'newYork' })
   const [expandedContinent, setExpandedContinent] = useState('northAmerica')
   const [tilesLoaded, setTilesLoaded] = useState(0)
+  
+  // Initialize layers state from LAYERS_CONFIG
+  const [layers, setLayers] = useState(() => {
+    const initialLayers = {}
+    LAYERS_CONFIG.forEach(layer => {
+      initialLayers[layer.id] = { visible: layer.defaultVisible }
+    })
+    return initialLayers
+  })
   
   const mapboxRef = useRef(null)
   const maplibreRef = useRef(null)
@@ -73,6 +83,16 @@ function App() {
     setViewMode(newMode)
   }, [])
 
+  const handleLayerToggle = useCallback((layerId) => {
+    setLayers(prev => ({
+      ...prev,
+      [layerId]: { 
+        ...prev[layerId], 
+        visible: !prev[layerId]?.visible 
+      }
+    }))
+  }, [])
+
   const getCurrentLocationData = useCallback(() => {
     const continent = CONTINENTS[currentLocation.continent]
     if (!continent) return null
@@ -95,6 +115,7 @@ function App() {
           viewMode={viewMode}
           isActive={mapType === 'mapbox'}
           onTileLoad={handleTileLoadMapbox}
+          layers={layers}
         />
       </div>
 
@@ -110,6 +131,7 @@ function App() {
           viewMode={viewMode}
           isActive={mapType === 'maplibre'}
           onTileLoad={handleTileLoadMaplibre}
+          layers={layers}
         />
       </div>
 
@@ -125,6 +147,7 @@ function App() {
           viewMode={viewMode}
           isActive={mapType === 'esri'}
           onTileLoad={handleTileLoadEsri}
+          layers={layers}
         />
       </div>
 
@@ -140,6 +163,7 @@ function App() {
           viewMode={viewMode}
           isActive={mapType === 'cesium'}
           onTileLoad={handleTileLoadCesium}
+          layers={layers}
         />
       </div>
 
@@ -161,6 +185,12 @@ function App() {
         onLocationChange={handleLocationChange}
         expandedContinent={expandedContinent}
         onContinentToggle={setExpandedContinent}
+      />
+
+      {/* Layers Panel */}
+      <LayersPanel 
+        layers={layers}
+        onLayerToggle={handleLayerToggle}
       />
 
       {/* Status Bar */}

@@ -6,6 +6,7 @@ import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import { CONTINENTS, INITIAL_ZOOM, INITIAL_PITCH, INITIAL_BEARING } from './LocationSelector'
+import { LAYERS_CONFIG } from './LayersPanel'
 
 // API Keys - set in .env file
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
@@ -49,13 +50,14 @@ const OSM_STYLE = {
   ]
 }
 
-const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad }, ref) => {
+const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad, layers = {} }, ref) => {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const overlay = useRef(null)
   const currentViewMode = useRef(viewMode)
   const isMapLoaded = useRef(false)
   const isActiveRef = useRef(isActive)
+  const powerLinesLayerAdded = useRef(false)
 
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
@@ -147,6 +149,62 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
       // Add terrain source if available (MapLibre terrain)
       // Note: MapLibre doesn't have built-in terrain like Mapbox, you'd need a terrain source
       // For now, we'll skip terrain as it requires additional setup
+
+      // Add Power Lines layer from GeoJSON
+      const powerLinesConfig = LAYERS_CONFIG.find(l => l.id === 'power-lines')
+      if (powerLinesConfig) {
+        map.current.addSource('power-lines', {
+          type: 'geojson',
+          data: '/data/power-lines.geojson'
+        })
+
+        map.current.addLayer({
+          id: 'power-lines-layer',
+          type: 'line',
+          source: 'power-lines',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+            'visibility': 'none' // Start hidden, controlled by LayersPanel
+          },
+          paint: {
+            'line-color': '#ffdc00',
+            'line-width': [
+              'interpolate', ['linear'], ['zoom'],
+              10, 2,
+              14, 4,
+              18, 8
+            ],
+            'line-opacity': 0.8
+          }
+        })
+
+        // Add glow effect layer behind main line
+        map.current.addLayer({
+          id: 'power-lines-glow',
+          type: 'line',
+          source: 'power-lines',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+            'visibility': 'none'
+          },
+          paint: {
+            'line-color': '#ff9500',
+            'line-width': [
+              'interpolate', ['linear'], ['zoom'],
+              10, 6,
+              14, 10,
+              18, 16
+            ],
+            'line-opacity': 0.4,
+            'line-blur': 3
+          }
+        }, 'power-lines-layer') // Place below main line
+
+        powerLinesLayerAdded.current = true
+        console.log('✓ MapLibre: Power lines layer added')
+      }
     })
 
     return () => {
@@ -210,6 +268,59 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
     
     console.log(`MapLibre 3D tiles: ${shouldShow3DTiles ? 'resumed' : 'paused'}`)
   }, [isActive, createTile3DLayer])
+
+  // Handle layer visibility changes from LayersPanel
+  useEffect(() => {
+    if (!map.current || !isMapLoaded.current || !powerLinesLayerAdded.current) return
+
+    const powerLinesVisible = layers['power-lines']?.visible
+
+    // Toggle power lines layer visibility
+    const visibility = powerLinesVisible ? 'visible' : 'none'
+    
+    if (map.current.getLayer('power-lines-layer')) {
+      map.current.setLayoutProperty('power-lines-layer', 'visibility', visibility)
+    }
+    if (map.current.getLayer('power-lines-glow')) {
+      map.current.setLayoutProperty('power-lines-glow', 'visibility', visibility)
+    }
+
+    // When power lines are visible, hide all non-essential layers
+    // Keep only: satellite imagery (raster), 3D tiles, and power lines
+    const style = map.current.getStyle()
+    if (style && style.layers) {
+      style.layers.forEach(layer => {
+        // Skip our own layers
+        if (layer.id === 'power-lines-layer' || layer.id === 'power-lines-glow') {
+          return
+        }
+
+        // Keep satellite/raster layers (orthophoto)
+        if (layer.type === 'raster') {
+          return
+        }
+
+        // Keep background layers
+        if (layer.type === 'background') {
+          return
+        }
+
+        // Hide all other layers (labels, roads, buildings, etc.) when power lines visible
+        if (layer.type === 'symbol' || layer.type === 'line' || layer.type === 'fill' || layer.type === 'fill-extrusion') {
+          try {
+            const targetVisibility = powerLinesVisible ? 'none' : 'visible'
+            map.current.setLayoutProperty(layer.id, 'visibility', targetVisibility)
+          } catch (e) {
+            // Some layers might not support visibility changes
+          }
+        }
+      })
+      
+      console.log(`MapLibre: Basemap layers ${powerLinesVisible ? 'hidden' : 'visible'} (power lines ${powerLinesVisible ? 'on' : 'off'})`)
+    }
+
+    console.log(`MapLibre Layer "power-lines": ${powerLinesVisible ? 'visible' : 'hidden'}`)
+  }, [layers])
 
   return (
     <div 

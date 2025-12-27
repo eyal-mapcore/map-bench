@@ -1,10 +1,12 @@
-import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import Map from '@arcgis/core/Map'
 import SceneView from '@arcgis/core/views/SceneView'
 import IntegratedMesh3DTilesLayer from '@arcgis/core/layers/IntegratedMesh3DTilesLayer'
+import GeoJSONLayer from '@arcgis/core/layers/GeoJSONLayer'
 import '@arcgis/core/assets/esri/themes/light/main.css'
 
 import { CONTINENTS, INITIAL_ZOOM, INITIAL_PITCH, INITIAL_BEARING } from './LocationSelector'
+import { LAYERS_CONFIG } from './LayersPanel'
 
 // API Key - set in .env file
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
@@ -20,10 +22,12 @@ function scaleToZoom(scale) {
   return Math.log2(591657550.5 / scale)
 }
 
-const MapESRI = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad }, ref) => {
+const MapESRI = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad, layers = {} }, ref) => {
   const mapContainer = useRef(null)
   const view = useRef(null)
+  const mapRef = useRef(null)
   const google3DTilesLayer = useRef(null)
+  const customLayers = useRef({})
   const currentViewMode = useRef(viewMode)
   const isActiveRef = useRef(isActive)
 
@@ -89,12 +93,61 @@ const MapESRI = forwardRef(({ currentLocation, viewMode = '3d', isActive = true,
       console.log('✓ ESRI: Google 3D Tiles layer view created')
     })
 
+    // Create Power Lines layer from pre-processed GeoJSON file
+    const powerLinesConfig = LAYERS_CONFIG.find(l => l.id === 'power-lines')
+    if (powerLinesConfig) {
+      const powerLinesLayer = new GeoJSONLayer({
+        id: 'power-lines',
+        url: '/data/power-lines.geojson', // Pre-processed file from OSM
+        title: powerLinesConfig.name,
+        opacity: powerLinesConfig.opacity || 1,
+        visible: false, // Controlled by LayersPanel
+        // 3D elevation - display at fixed height above ground
+        elevationInfo: {
+          mode: 'relative-to-ground',
+          offset: powerLinesConfig.elevationHeight || 15 // 15 meters above ground
+        },
+        // 3D Line symbology - 3D tube with volume
+        renderer: {
+          type: 'simple',
+          symbol: {
+            type: 'line-3d',
+            symbolLayers: [{
+              type: 'path',
+              profile: 'circle', // Round cable profile for 3D appearance
+              width: 3, // Width in meters
+              height: 3, // Height in meters - gives 3D volume
+              material: {
+                color: [255, 220, 0, 0.7] // Yellow with transparency
+              },
+              cap: 'round',
+              join: 'round'
+            }]
+          }
+        },
+        popupEnabled: true,
+        popupTemplate: {
+          title: '{name}',
+          content: `
+            <b>מתח:</b> {voltage}<br>
+            <b>כבלים:</b> {cables}<br>
+            <b>מפעיל:</b> {operator}
+          `
+        }
+      })
+      customLayers.current['power-lines'] = powerLinesLayer
+    }
+
     // Create the map - using 'hybrid' basemap for better brightness with labels
     const map = new Map({
       basemap: 'hybrid',
       ground: 'world-elevation',
-      layers: [google3DTilesLayer.current]
+      layers: [
+        google3DTilesLayer.current,
+        ...(customLayers.current['power-lines'] ? [customLayers.current['power-lines']] : [])
+      ]
     })
+    mapRef.current = map
 
     // Get initial location
     const initialLocation = CONTINENTS[currentLocation.continent]?.locations[currentLocation.city]
@@ -143,6 +196,62 @@ const MapESRI = forwardRef(({ currentLocation, viewMode = '3d', isActive = true,
           }
         }
       }, 500)
+
+      // Scale-responsive power lines - update renderer based on zoom level
+      const powerLinesLayer = customLayers.current['power-lines']
+      if (powerLinesLayer) {
+        // Function to calculate line size based on scale
+        const getLineSize = (scale) => {
+          // Scale stops: [scale, size in meters]
+          const stops = [
+            [500, 2],        // Very zoomed in - thin
+            [2000, 6],       // Zoomed in
+            [10000, 20],     // Medium zoom
+            [50000, 80],     // Zoomed out
+            [200000, 240],   // Very zoomed out
+            [500000, 600]    // Extreme zoom out
+          ]
+          
+          // Find the right interpolation range
+          if (scale <= stops[0][0]) return stops[0][1]
+          if (scale >= stops[stops.length - 1][0]) return stops[stops.length - 1][1]
+          
+          for (let i = 0; i < stops.length - 1; i++) {
+            if (scale >= stops[i][0] && scale < stops[i + 1][0]) {
+              // Linear interpolation between stops
+              const t = (scale - stops[i][0]) / (stops[i + 1][0] - stops[i][0])
+              return stops[i][1] + t * (stops[i + 1][1] - stops[i][1])
+            }
+          }
+          return stops[0][1]
+        }
+
+        // Update renderer when scale changes
+        let lastSize = null
+        view.current.watch('scale', (scale) => {
+          const newSize = Math.round(getLineSize(scale))
+          if (newSize !== lastSize) {
+            lastSize = newSize
+            powerLinesLayer.renderer = {
+              type: 'simple',
+              symbol: {
+                type: 'line-3d',
+                symbolLayers: [{
+                  type: 'path',
+                  profile: 'circle',
+                  width: newSize,
+                  height: newSize,
+                  material: {
+                    color: [255, 220, 0, 0.7] // Dark orange with transparency
+                  },
+                  cap: 'round',
+                  join: 'round'
+                }]
+              }
+            }
+          }
+        })
+      }
 
       // Cleanup interval on unmount
       view.current.on('destroy', () => {
@@ -213,6 +322,35 @@ const MapESRI = forwardRef(({ currentLocation, viewMode = '3d', isActive = true,
     
     console.log(`ESRI 3D tiles: ${shouldShow3DTiles ? 'resumed' : 'paused'}`)
   }, [isActive])
+
+  // Handle layer visibility changes from LayersPanel
+  useEffect(() => {
+    if (!mapRef.current) return
+
+    Object.entries(layers).forEach(([layerId, layerState]) => {
+      const layer = customLayers.current[layerId]
+      if (layer) {
+        layer.visible = layerState.visible
+        console.log(`ESRI Layer "${layerId}": ${layerState.visible ? 'visible' : 'hidden'}`)
+        
+        // Ensure layer is on top
+        if (layerState.visible && mapRef.current) {
+          mapRef.current.reorder(layer, mapRef.current.layers.length - 1)
+        }
+      }
+    })
+
+    // When power-lines layer is visible, hide basemap reference layers (labels, roads)
+    // Keep only orthophoto (base layers) and Google 3D Tiles visible
+    const powerLinesVisible = layers['power-lines']?.visible
+    if (mapRef.current?.basemap) {
+      // Hide/show reference layers (labels, roads, etc.)
+      mapRef.current.basemap.referenceLayers?.forEach(refLayer => {
+        refLayer.visible = !powerLinesVisible
+      })
+      console.log(`ESRI Basemap reference layers: ${powerLinesVisible ? 'hidden' : 'visible'}`)
+    }
+  }, [layers])
 
   return (
     <div 

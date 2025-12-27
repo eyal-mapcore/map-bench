@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 
 import { CONTINENTS, INITIAL_ZOOM, INITIAL_PITCH, INITIAL_BEARING } from './LocationSelector'
+import { LAYERS_CONFIG } from './LayersPanel'
 
 // API Keys - set in .env file
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
@@ -25,10 +26,11 @@ function heightToZoom(height) {
   return Math.log2(591657550.5 / height)
 }
 
-const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad }, ref) => {
+const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad, layers = {} }, ref) => {
   const mapContainer = useRef(null)
   const viewer = useRef(null)
   const tileset = useRef(null)
+  const powerLinesDataSource = useRef(null)
   const currentViewMode = useRef(viewMode)
   const isActiveRef = useRef(isActive)
   const tileCount = useRef(0)
@@ -220,6 +222,58 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
       creditContainer.style.borderRadius = '3px'
     }
 
+    // Load Power Lines from GeoJSON
+    const powerLinesConfig = LAYERS_CONFIG.find(l => l.id === 'power-lines')
+    if (powerLinesConfig) {
+      Cesium.GeoJsonDataSource.load('/data/power-lines.geojson', {
+        stroke: Cesium.Color.YELLOW.withAlpha(0.9),
+        strokeWidth: 4,
+        clampToGround: false
+      }).then((dataSource) => {
+        powerLinesDataSource.current = dataSource
+        dataSource.show = false // Start hidden
+        viewer.current.dataSources.add(dataSource)
+        
+        // Style entities with elevation and disable depth test
+        const entities = dataSource.entities.values
+        for (let i = 0; i < entities.length; i++) {
+          const entity = entities[i]
+          if (entity.polyline) {
+            // Get existing positions and add height
+            const positions = entity.polyline.positions.getValue(Cesium.JulianDate.now())
+            if (positions) {
+              const elevatedPositions = positions.map(pos => {
+                const cartographic = Cesium.Cartographic.fromCartesian(pos)
+                return Cesium.Cartesian3.fromRadians(
+                  cartographic.longitude,
+                  cartographic.latitude,
+                  50 // 50 meters above ground (higher to be visible above buildings)
+                )
+              })
+              
+              entity.polyline.positions = elevatedPositions
+              entity.polyline.material = new Cesium.PolylineGlowMaterialProperty({
+                glowPower: 0.4,
+                color: Cesium.Color.YELLOW.withAlpha(0.9)
+              })
+              entity.polyline.width = 6
+              // Disable depth test so lines always render on top
+              entity.polyline.depthFailMaterial = new Cesium.PolylineGlowMaterialProperty({
+                glowPower: 0.4,
+                color: Cesium.Color.ORANGE.withAlpha(0.7)
+              })
+              // Always show lines regardless of depth (distance in meters, Number.POSITIVE_INFINITY = always)
+              entity.polyline.disableDepthTestDistance = Number.POSITIVE_INFINITY
+            }
+          }
+        }
+        
+        console.log('✓ Cesium: Power lines layer added')
+      }).catch((error) => {
+        console.error('Error loading power lines:', error)
+      })
+    }
+
     console.log('✓ Cesium Viewer ready')
 
     return () => {
@@ -347,6 +401,31 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
       viewer.current.scene.requestRender()
     }
   }, [isActive])
+
+  // Handle layer visibility changes from LayersPanel
+  useEffect(() => {
+    if (!viewer.current || !powerLinesDataSource.current) return
+
+    const powerLinesVisible = layers['power-lines']?.visible
+
+    // Toggle power lines visibility
+    powerLinesDataSource.current.show = powerLinesVisible
+
+    // When power lines are visible, hide imagery layers (labels, etc.)
+    // Keep only satellite base layer and 3D tiles
+    const imageryLayers = viewer.current.imageryLayers
+    if (imageryLayers.length > 1) {
+      // Hide all layers except the first (satellite base)
+      for (let i = 1; i < imageryLayers.length; i++) {
+        imageryLayers.get(i).show = !powerLinesVisible
+      }
+    }
+
+    // Request render to update
+    viewer.current.scene.requestRender()
+    
+    console.log(`Cesium Layer "power-lines": ${powerLinesVisible ? 'visible' : 'hidden'}`)
+  }, [layers])
 
   return (
     <div 
