@@ -1,7 +1,8 @@
 import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 
-import { CONTINENTS, INITIAL_ZOOM, INITIAL_PITCH, INITIAL_BEARING } from './LocationSelector'
-import { LAYERS_CONFIG } from './LayersPanel'
+import { CONTINENTS, INITIAL_ZOOM, INITIAL_PITCH, INITIAL_BEARING } from '../components/LocationSelector'
+import { LAYERS_CONFIG } from '../components/LayersPanel'
+import { DEFAULT_RELIGION_ICONS, getIconUrl } from '../utils/mapStyleConfig'
 
 // API Keys - set in .env file
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
@@ -26,14 +27,23 @@ function heightToZoom(height) {
   return Math.log2(591657550.5 / height)
 }
 
-const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad, layers = {} }, ref) => {
+// Height for floating religious icons in 3D mode (meters)
+const RELIGIOUS_ICON_HEIGHT_3D = 50
+
+const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, onTileLoad, layers = {}, initialCamera = null }, ref) => {
   const mapContainer = useRef(null)
   const viewer = useRef(null)
   const tileset = useRef(null)
   const powerLinesDataSource = useRef(null)
+  const religiousBuildingsDataSource = useRef(null)
   const currentViewMode = useRef(viewMode)
   const isActiveRef = useRef(isActive)
   const tileCount = useRef(0)
+  const viewerInitialized = useRef(false) // Track if we've actually created a viewer
+  const hasSkippedFirstFlyTo = useRef(false) // Track if we've skipped first flyTo (for initialCamera)
+  
+  // Store initialCamera value at first render for use in effects
+  const initialCameraOnMount = useRef(initialCamera)
 
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
@@ -126,13 +136,26 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
   }, [onTileLoad])
 
   useEffect(() => {
-    if (viewer.current) return
+    // Skip if viewer already exists (React Strict Mode double-render protection)
+    if (viewer.current || viewerInitialized.current) return
+    viewerInitialized.current = true
 
-    // Get initial location
-    const initialLocation = CONTINENTS[currentLocation.continent]?.locations[currentLocation.city]
-    const initialCenter = initialLocation?.coords || CONTINENTS.israel.locations.netanya.coords
-    const initialHeight = zoomToHeight(INITIAL_ZOOM)
-    const initialPitch = viewMode === '3d' ? INITIAL_PITCH : 0
+    // Use initialCamera if provided (when switching from another map), otherwise use location
+    let center, height, pitch, heading
+    const cameraToUse = initialCameraOnMount.current
+    
+    if (cameraToUse) {
+      center = cameraToUse.center
+      height = zoomToHeight(cameraToUse.zoom)
+      pitch = cameraToUse.pitch
+      heading = -cameraToUse.bearing
+    } else {
+      const initialLocation = CONTINENTS[currentLocation.continent]?.locations[currentLocation.city]
+      center = initialLocation?.coords || CONTINENTS.israel.locations.netanya.coords
+      height = zoomToHeight(INITIAL_ZOOM)
+      pitch = viewMode === '3d' ? INITIAL_PITCH : 0
+      heading = INITIAL_BEARING
+    }
 
     // Create viewer
     viewer.current = new Cesium.Viewer(mapContainer.current, {
@@ -188,13 +211,13 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
     // Set initial camera position
     viewer.current.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(
-        initialCenter[0],
-        initialCenter[1],
-        initialHeight
+        center[0],
+        center[1],
+        height
       ),
       orientation: {
-        heading: Cesium.Math.toRadians(-INITIAL_BEARING),
-        pitch: Cesium.Math.toRadians(initialPitch - 90),
+        heading: Cesium.Math.toRadians(-heading),
+        pitch: Cesium.Math.toRadians(pitch - 90),
         roll: 0
       }
     })
@@ -274,6 +297,90 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
       })
     }
 
+    // Load Religious Buildings from GeoJSON
+    fetch('/data/religious-buildings.geojson')
+      .then(response => response.json())
+      .then(data => {
+        const dataSource = new Cesium.CustomDataSource('religious-buildings')
+        
+        data.features.forEach(feature => {
+          const coords = feature.geometry.coordinates
+          const props = feature.properties
+          const religion = props.religion || 'default'
+          const iconUrl = getIconUrl(DEFAULT_RELIGION_ICONS, religion)
+          const is3D = currentViewMode.current === '3d'
+          
+          // Create billboard for the icon
+          // In 2D mode: use NONE heightReference and height 0 to place icons on the map surface
+          // In 3D mode: use RELATIVE_TO_GROUND and elevated height for visibility above buildings
+          const entity = dataSource.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(coords[0], coords[1], is3D ? RELIGIOUS_ICON_HEIGHT_3D : 0),
+            billboard: {
+              image: iconUrl,
+              width: 24,
+              height: 24,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              heightReference: is3D ? Cesium.HeightReference.RELATIVE_TO_GROUND : Cesium.HeightReference.NONE,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY
+            },
+            properties: props
+          })
+          
+          // Add polyline from ground to icon in 3D mode
+          if (is3D) {
+            entity.polyline = new Cesium.PolylineGraphics({
+              positions: [
+                Cesium.Cartesian3.fromDegrees(coords[0], coords[1], 0),
+                Cesium.Cartesian3.fromDegrees(coords[0], coords[1], RELIGIOUS_ICON_HEIGHT_3D)
+              ],
+              width: 2,
+              material: new Cesium.PolylineDashMaterialProperty({
+                color: Cesium.Color.WHITE.withAlpha(0.8),
+                dashLength: 8
+              }),
+              clampToGround: false,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY
+            })
+          }
+        })
+        
+        religiousBuildingsDataSource.current = dataSource
+        dataSource.show = false // Start hidden
+        viewer.current.dataSources.add(dataSource)
+        
+        console.log(`✓ Cesium: Religious buildings layer added (${data.features.length} features)`)
+        
+        // Apply initial layer visibility state (for when switching from another map)
+        setTimeout(() => {
+          const currentLayers = layersStateRef.current
+          const powerLinesVisible = currentLayers['power-lines']?.visible
+          const religiousBuildingsVisible = currentLayers['religious-buildings']?.visible
+
+          if (powerLinesDataSource.current) {
+            powerLinesDataSource.current.show = powerLinesVisible
+          }
+          if (religiousBuildingsDataSource.current) {
+            religiousBuildingsDataSource.current.show = religiousBuildingsVisible
+          }
+
+          const anyLayerVisible = powerLinesVisible || religiousBuildingsVisible
+          if (viewer.current) {
+            const imageryLayers = viewer.current.imageryLayers
+            if (imageryLayers.length > 1) {
+              for (let i = 1; i < imageryLayers.length; i++) {
+                imageryLayers.get(i).show = !anyLayerVisible
+              }
+            }
+            viewer.current.scene.requestRender()
+          }
+          
+          console.log('✓ Cesium: Initial layer state applied')
+        }, 100)
+      })
+      .catch(error => {
+        console.error('Error loading religious buildings:', error)
+      })
+
     console.log('✓ Cesium Viewer ready')
 
     return () => {
@@ -282,12 +389,22 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
         viewer.current = null
         tileset.current = null
       }
+      // Reset refs for next mount (important for React Strict Mode)
+      viewerInitialized.current = false
+      tileCount.current = 0
+      hasSkippedFirstFlyTo.current = false
     }
   }, [])
-
+  
   // Handle location changes from parent (NOT triggered by viewMode changes)
   useEffect(() => {
     if (!viewer.current) return
+
+    // Skip the first flyTo if we used initialCamera (preserves camera state when switching maps)
+    if (initialCameraOnMount.current && !hasSkippedFirstFlyTo.current) {
+      hasSkippedFirstFlyTo.current = true
+      return
+    }
 
     const continent = CONTINENTS[currentLocation.continent]
     if (!continent) return
@@ -383,6 +500,53 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
         tileset.current.show = false
       }
     }
+    
+    // Update religious buildings entities for 2D/3D mode
+    if (religiousBuildingsDataSource.current) {
+      const entities = religiousBuildingsDataSource.current.entities.values
+      for (let i = 0; i < entities.length; i++) {
+        const entity = entities[i]
+        const props = entity.properties
+        if (props) {
+          const coords = Cesium.Cartographic.fromCartesian(entity.position.getValue(Cesium.JulianDate.now()))
+          const lon = Cesium.Math.toDegrees(coords.longitude)
+          const lat = Cesium.Math.toDegrees(coords.latitude)
+          
+          // Update position height
+          entity.position = Cesium.Cartesian3.fromDegrees(lon, lat, is3D ? RELIGIOUS_ICON_HEIGHT_3D : 0)
+          
+          // Update billboard height reference
+          // Use NONE for 2D mode (CLAMP_TO_GROUND doesn't work without terrain)
+          if (entity.billboard) {
+            entity.billboard.heightReference = is3D ? 
+              Cesium.HeightReference.RELATIVE_TO_GROUND : 
+              Cesium.HeightReference.NONE
+          }
+          
+          // Add or remove callout line
+          if (is3D) {
+            entity.polyline = new Cesium.PolylineGraphics({
+              positions: [
+                Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+                Cesium.Cartesian3.fromDegrees(lon, lat, RELIGIOUS_ICON_HEIGHT_3D)
+              ],
+              width: 2,
+              material: new Cesium.PolylineDashMaterialProperty({
+                color: Cesium.Color.WHITE.withAlpha(0.8),
+                dashLength: 8
+              }),
+              clampToGround: false,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY
+            })
+          } else {
+            entity.polyline = undefined
+          }
+        }
+      }
+    }
+    
+    // Request render to update
+    viewer.current.scene.requestRender()
   }, [viewMode, create3DTileset])
 
   // Handle active state changes - pause/resume tile loading
@@ -393,7 +557,6 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
       const is3D = currentViewMode.current === '3d'
       const shouldShow = is3D && isActive
       tileset.current.show = shouldShow
-      console.log(`Cesium 3D tiles: ${shouldShow ? 'resumed' : 'paused'}`)
     }
     
     // Request render when becoming active
@@ -402,30 +565,47 @@ const MapCesium = forwardRef(({ currentLocation, viewMode = '3d', isActive = tru
     }
   }, [isActive])
 
-  // Handle layer visibility changes from LayersPanel
-  useEffect(() => {
-    if (!viewer.current || !powerLinesDataSource.current) return
+  // Ref to track layers state for use in initialization
+  const layersStateRef = useRef(layers)
 
-    const powerLinesVisible = layers['power-lines']?.visible
+  // Apply current layer visibility state - called both on initial load and when layers change
+  const applyLayersState = useCallback(() => {
+    if (!viewer.current) return
+
+    const currentLayers = layersStateRef.current
+    const powerLinesVisible = currentLayers['power-lines']?.visible
+    const religiousBuildingsVisible = currentLayers['religious-buildings']?.visible
 
     // Toggle power lines visibility
-    powerLinesDataSource.current.show = powerLinesVisible
+    if (powerLinesDataSource.current) {
+      powerLinesDataSource.current.show = powerLinesVisible
+    }
+    
+    // Toggle religious buildings visibility
+    if (religiousBuildingsDataSource.current) {
+      religiousBuildingsDataSource.current.show = religiousBuildingsVisible
+    }
 
-    // When power lines are visible, hide imagery layers (labels, etc.)
+    // When power lines OR religious buildings are visible, hide imagery layers (labels, etc.)
     // Keep only satellite base layer and 3D tiles
+    const anyLayerVisible = powerLinesVisible || religiousBuildingsVisible
     const imageryLayers = viewer.current.imageryLayers
     if (imageryLayers.length > 1) {
       // Hide all layers except the first (satellite base)
       for (let i = 1; i < imageryLayers.length; i++) {
-        imageryLayers.get(i).show = !powerLinesVisible
+        imageryLayers.get(i).show = !anyLayerVisible
       }
     }
 
     // Request render to update
     viewer.current.scene.requestRender()
-    
-    console.log(`Cesium Layer "power-lines": ${powerLinesVisible ? 'visible' : 'hidden'}`)
-  }, [layers])
+  }, [])
+
+  // Handle layer visibility changes from LayersPanel
+  useEffect(() => {
+    layersStateRef.current = layers
+    applyLayersState()
+  }, [layers, applyLayersState])
 
   return (
     <div 

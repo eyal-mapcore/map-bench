@@ -82,8 +82,8 @@ export function LayersPanel({ layers, onLayerToggle }) {
   return (
     <div style={{
       position: 'absolute',
-      bottom: '80px',
-      left: '10px',
+      bottom: '10px',
+      right: '10px',
       zIndex: 1000,
       fontFamily: 'system-ui, -apple-system, sans-serif',
       direction: 'rtl'
@@ -91,40 +91,23 @@ export function LayersPanel({ layers, onLayerToggle }) {
       {/* Layers Panel (when open) */}
       {isOpen && (
         <div style={{
+          position: 'absolute',
+          bottom: '60px',
+          right: '0',
           background: 'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.95) 100%)',
           borderRadius: '16px',
-          padding: '16px',
-          marginBottom: '12px',
-          width: '260px',
+          padding: '4px 8px',
+          width: '280px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           border: '1px solid rgba(255,255,255,0.1)',
           animation: 'slideUp 0.2s ease-out'
         }}>
-          {/* Header */}
-          <div style={{
-            color: '#fff',
-            fontSize: '15px',
-            fontWeight: 'bold',
-            marginBottom: '14px',
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            paddingBottom: '12px',
-            borderBottom: '1px solid rgba(255,255,255,0.1)'
-          }}>
-            <span style={{ fontSize: '18px' }}>🗂️</span>
-            <span>שכבות</span>
-          </div>
-
           {/* Layers List */}
           <div style={{
             display: 'flex',
-            flexDirection: 'column',
-            gap: '8px'
+            flexDirection: 'column'
           }}>
-            {LAYERS_CONFIG.map((layerConfig) => {
+            {LAYERS_CONFIG.map((layerConfig, index) => {
               const layerState = layers[layerConfig.id]
               const isVisible = layerState?.visible ?? layerConfig.defaultVisible
               
@@ -135,28 +118,12 @@ export function LayersPanel({ layers, onLayerToggle }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                    padding: '12px',
-                    background: isVisible 
-                      ? 'linear-gradient(135deg, rgba(251,146,60,0.2) 0%, rgba(234,88,12,0.2) 100%)'
-                      : 'rgba(255,255,255,0.05)',
-                    borderRadius: '12px',
+                    padding: '12px 0',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    border: isVisible 
-                      ? '1px solid rgba(251,146,60,0.3)' 
-                      : '1px solid rgba(255,255,255,0.08)'
+                    transition: 'opacity 0.2s ease',
+                    borderBottom: index < LAYERS_CONFIG.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
                   }}
                   onClick={() => onLayerToggle(layerConfig.id)}
-                  onMouseEnter={(e) => {
-                    if (!isVisible) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.1)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isVisible) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
-                    }
-                  }}
                 >
                   {/* Layer Icon */}
                   <span style={{ fontSize: '24px' }}>{layerConfig.icon}</span>
@@ -164,7 +131,7 @@ export function LayersPanel({ layers, onLayerToggle }) {
                   {/* Layer Info */}
                   <div style={{ flex: 1 }}>
                     <div style={{
-                      color: '#fff',
+                      color: isVisible ? '#fb923c' : '#fff',
                       fontSize: '14px',
                       fontWeight: 'bold',
                       marginBottom: '2px'
@@ -204,17 +171,6 @@ export function LayersPanel({ layers, onLayerToggle }) {
             })}
           </div>
 
-          {/* Info text */}
-          <div style={{
-            marginTop: '12px',
-            paddingTop: '12px',
-            borderTop: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: '10px',
-            textAlign: 'center'
-          }}>
-            לחץ על העין להצגה/הסתרה
-          </div>
         </div>
       )}
 
@@ -235,13 +191,7 @@ export function LayersPanel({ layers, onLayerToggle }) {
           alignItems: 'center',
           justifyContent: 'center',
           boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-          transition: 'all 0.2s ease'
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'scale(1.05)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'scale(1)'
+          transition: 'background 0.2s ease'
         }}
       >
         <LayersIcon />

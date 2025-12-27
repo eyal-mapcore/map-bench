@@ -1,10 +1,18 @@
-import { useState, useRef, useCallback } from 'react'
-import MapBox from './components/MapBox'
-import MapLibre from './components/MapLibre'
-import MapESRI from './components/MapESRI'
-import MapCesium from './components/MapCesium'
-import { LocationSelector, StatusBar, MapToggle, ViewModeToggle, CONTINENTS } from './components/LocationSelector'
+import { useState, useRef, useCallback, lazy, Suspense } from 'react'
+import { LocationSelector, CONTINENTS } from './components/LocationSelector'
+import { StatusBar } from './components/StatusBar'
+import { MapToggle } from './components/MapToggle'
+import { ViewModeToggle } from './components/ViewModeToggle'
 import { LayersPanel, LAYERS_CONFIG } from './components/LayersPanel'
+
+// Lazy load map components - only load when needed
+const MapBox = lazy(() => import('./maps/MapBox'))
+const MapLibre = lazy(() => import('./maps/MapLibre'))
+const MapESRI = lazy(() => import('./maps/MapESRI'))
+const MapCesium = lazy(() => import('./maps/MapCesium'))
+
+// Empty loading fallback - maps load fast enough
+const MapLoader = () => null
 
 function App() {
   const [mapType, setMapType] = useState('mapbox') // 'mapbox', 'esri', or 'cesium'
@@ -21,6 +29,9 @@ function App() {
     })
     return initialLayers
   })
+  
+  // Store shared camera state using ref (immediate update, not batched by React)
+  const sharedCameraRef = useRef(null)
   
   const mapboxRef = useRef(null)
   const maplibreRef = useRef(null)
@@ -49,7 +60,7 @@ function App() {
   }, [])
 
   const handleMapTypeChange = useCallback((newType) => {
-    // Get camera from current map type
+    // Get camera from current map type and save it to shared ref
     let camera = null
     if (mapType === 'mapbox' && mapboxRef.current) {
       camera = mapboxRef.current.getCamera()
@@ -61,17 +72,9 @@ function App() {
       camera = cesiumRef.current.getCamera()
     }
 
-    // Set camera on new map type
+    // Save camera to shared ref (immediately available for new map)
     if (camera) {
-      if (newType === 'mapbox' && mapboxRef.current) {
-        mapboxRef.current.setCamera(camera)
-      } else if (newType === 'maplibre' && maplibreRef.current) {
-        maplibreRef.current.setCamera(camera)
-      } else if (newType === 'esri' && esriRef.current) {
-        esriRef.current.setCamera(camera)
-      } else if (newType === 'cesium' && cesiumRef.current) {
-        cesiumRef.current.setCamera(camera)
-      }
+      sharedCameraRef.current = camera
     }
     
     setMapType(newType)
@@ -93,6 +96,11 @@ function App() {
     }))
   }, [])
 
+  // Get initial camera for any map type (from shared ref - immediately available)
+  const getInitialCamera = useCallback(() => {
+    return sharedCameraRef.current
+  }, [])
+
   const getCurrentLocationData = useCallback(() => {
     const continent = CONTINENTS[currentLocation.continent]
     if (!continent) return null
@@ -103,68 +111,57 @@ function App() {
 
   return (
     <>
-      {/* Mapbox Map */}
-      <div style={{ 
-        display: mapType === 'mapbox' ? 'block' : 'none',
-        width: '100%',
-        height: '100vh'
-      }}>
-        <MapBox 
-          ref={mapboxRef}
-          currentLocation={currentLocation}
-          viewMode={viewMode}
-          isActive={mapType === 'mapbox'}
-          onTileLoad={handleTileLoadMapbox}
-          layers={layers}
-        />
-      </div>
-
-      {/* MapLibre Map */}
-      <div style={{ 
-        display: mapType === 'maplibre' ? 'block' : 'none',
-        width: '100%',
-        height: '100vh'
-      }}>
-        <MapLibre 
-          ref={maplibreRef}
-          currentLocation={currentLocation}
-          viewMode={viewMode}
-          isActive={mapType === 'maplibre'}
-          onTileLoad={handleTileLoadMaplibre}
-          layers={layers}
-        />
-      </div>
-
-      {/* ESRI Map */}
-      <div style={{ 
-        display: mapType === 'esri' ? 'block' : 'none',
-        width: '100%',
-        height: '100vh'
-      }}>
-        <MapESRI 
-          ref={esriRef}
-          currentLocation={currentLocation}
-          viewMode={viewMode}
-          isActive={mapType === 'esri'}
-          onTileLoad={handleTileLoadEsri}
-          layers={layers}
-        />
-      </div>
-
-      {/* Cesium Map */}
-      <div style={{ 
-        display: mapType === 'cesium' ? 'block' : 'none',
-        width: '100%',
-        height: '100vh'
-      }}>
-        <MapCesium 
-          ref={cesiumRef}
-          currentLocation={currentLocation}
-          viewMode={viewMode}
-          isActive={mapType === 'cesium'}
-          onTileLoad={handleTileLoadCesium}
-          layers={layers}
-        />
+      {/* Map Container - only render active map */}
+      <div style={{ width: '100%', height: '100vh' }}>
+        <Suspense fallback={<MapLoader />}>
+          {mapType === 'mapbox' && (
+            <MapBox 
+              ref={mapboxRef}
+              currentLocation={currentLocation}
+              viewMode={viewMode}
+              isActive={true}
+              onTileLoad={handleTileLoadMapbox}
+              layers={layers}
+              initialCamera={getInitialCamera()}
+            />
+          )}
+          
+          {mapType === 'maplibre' && (
+            <MapLibre 
+              ref={maplibreRef}
+              currentLocation={currentLocation}
+              viewMode={viewMode}
+              isActive={true}
+              onTileLoad={handleTileLoadMaplibre}
+              layers={layers}
+              initialCamera={getInitialCamera()}
+            />
+          )}
+          
+          {mapType === 'esri' && (
+            <MapESRI 
+              ref={esriRef}
+              currentLocation={currentLocation}
+              viewMode={viewMode}
+              isActive={true}
+              onTileLoad={handleTileLoadEsri}
+              layers={layers}
+              initialCamera={getInitialCamera()}
+            />
+          )}
+          
+          {mapType === 'cesium' && (
+            <MapCesium 
+              ref={cesiumRef}
+              currentLocation={currentLocation}
+              viewMode={viewMode}
+              isActive={true}
+              onTileLoad={handleTileLoadCesium}
+              layers={layers}
+              initialCamera={getInitialCamera()}
+            />
+          )}
+        </Suspense>
       </div>
 
       {/* Map Type Toggle */}
