@@ -171,17 +171,8 @@ const ChevronRight = () => (
 
 export function LocationSelector({ currentLocation, onLocationChange, expandedContinent, onContinentToggle }) {
   const [isOpen, setIsOpen] = useState(window.innerWidth > 768)
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  const showPanel = isOpen || !isMobile
+  const showPanel = isOpen
 
   return (
     <div style={{
@@ -225,8 +216,7 @@ export function LocationSelector({ currentLocation, onLocationChange, expandedCo
           position: 'relative',
           minHeight: '32px'
         }}>
-          {/* Close Button (Inside Header) - Only on Mobile */}
-          {isMobile && (
+          {/* Close Button (Inside Header) */}
             <button
               onClick={() => setIsOpen(false)}
               style={{
@@ -253,7 +243,6 @@ export function LocationSelector({ currentLocation, onLocationChange, expandedCo
             >
               <ChevronRight />
             </button>
-          )}
 
           <span>בחר מיקום</span>
         </div>
@@ -368,8 +357,7 @@ export function LocationSelector({ currentLocation, onLocationChange, expandedCo
         ))}
       </div>
 
-      {/* Open Tab (Outside) - Only on Mobile */}
-      {isMobile && (
+      {/* Open Tab (Outside) */}
         <button
           onClick={() => setIsOpen(true)}
           style={{
@@ -400,7 +388,6 @@ export function LocationSelector({ currentLocation, onLocationChange, expandedCo
         >
           <ChevronLeft />
         </button>
-      )}
     </div>
   )
 }
