@@ -26,6 +26,13 @@ Map implementation using **Mapbox GL JS** library.
 Map implementation using **ArcGIS API for JavaScript** (by ESRI).
 - Used for integration with ESRI GIS services.
 - Supports complex information layers and enterprise map services.
+
+### `MapLeaflet.jsx`
+Map implementation using **Leaflet** library.
+- Lightweight 2D map library.
+- Uses raster tiles (Esri World Imagery).
+- Supports GeoJSON layers and custom markers.
+
 ## How to Add a New Third-Party Map Component
 
 To add a new map provider (e.g., Google Maps, Leaflet, OpenLayers), follow these steps:
