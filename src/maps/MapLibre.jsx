@@ -94,6 +94,9 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
         '3d-tiles': {
           loadGLTF: true,
           decodeQuantizedPositions: false
+        },
+        gltf: {
+          normalize: true
         }
       },
       screenSpaceError: 8,
@@ -101,9 +104,26 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
       maximumMemoryUsage: 1024 * 1024 * 1024,
       opacity: 1,
       onTilesetLoad: () => console.log('✓ Google 3D Tileset loaded (MapLibre)'),
-      onTileLoad: () => {
+      onTileLoad: (tile) => {
+        const content = tile.content;
+        if (content && content.gltf && content.gltf.meshes) {
+          content.gltf.meshes.forEach(mesh => {
+            mesh.primitives?.forEach(primitive => {
+              if (primitive.indices) {
+                if (primitive.indices.value instanceof Uint8Array) {
+                  primitive.indices.value = new Uint16Array(primitive.indices.value);
+                  if (primitive.indices.componentType === 5121) {
+                    primitive.indices.componentType = 5123;
+                  }
+                } else if (primitive.indices instanceof Uint8Array) {
+                  primitive.indices = new Uint16Array(primitive.indices);
+                }
+              }
+            });
+          });
+        }
         if (onTileLoad) {
-          onTileLoad()
+          onTileLoad(tile)
         }
       },
       onTileError: () => {}
@@ -167,7 +187,8 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
         getColor: [59, 130, 246],
         opacity: 0.8,
         widthMinPixels: 3,
-        rounded: true,
+        jointRounded: true,
+        capRounded: true,
         trailLength: 180,
         currentTime: time,
         shadowEnabled: false
@@ -233,27 +254,10 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
         const response = await fetch('/data/religious-buildings.geojson')
         religiousBuildingsData.current = await response.json()
         
-        // Load religious building icons as SVG images (only on first toggle)
-        const religionIcons = ['jewish', 'christian', 'muslim', 'buddhist', 'hindu', 'shinto', 'default']
-        
-        for (const religion of religionIcons) {
-          try {
-            const img = new Image(24, 24)
-            img.src = `/sprites/${religion}.svg`
-            await new Promise((resolve, reject) => {
-              img.onload = resolve
-              img.onerror = reject
-            })
-            if (map.current && !map.current.hasImage(`icon-${religion}`)) {
-              map.current.addImage(`icon-${religion}`, img, { sdf: false })
-            }
-          } catch (e) {
-            console.warn(`Failed to load icon: ${religion}`, e)
-          }
-        }
+        // Icons are now preloaded in the 'load' event to prevent missing image warnings
         
         loadedLayers.current['religious-buildings'] = true
-        console.log('✓ MapLibre: Religious buildings data & icons loaded (lazy)')
+        console.log('✓ MapLibre: Religious buildings data loaded (lazy)')
         return true
       }
       
@@ -306,6 +310,24 @@ const MapLibre = forwardRef(({ currentLocation, viewMode = '3d', isActive = true
     })
 
     map.current.on('load', async () => {
+      // Preload religious icons immediately to avoid "image missing" warnings
+      const religionIcons = ['jewish', 'christian', 'muslim', 'buddhist', 'hindu', 'shinto', 'default']
+      await Promise.all(religionIcons.map(async (religion) => {
+        try {
+          const img = new Image(24, 24)
+          img.src = `/sprites/${religion}.svg`
+          await new Promise((resolve, reject) => {
+            img.onload = () => resolve(img)
+            img.onerror = reject
+          })
+          if (map.current && !map.current.hasImage(`icon-${religion}`)) {
+            map.current.addImage(`icon-${religion}`, img, { sdf: false })
+          }
+        } catch (e) {
+          console.warn(`Failed to load icon: ${religion}`, e)
+        }
+      }))
+
       isMapLoaded.current = true
       
       // Build initial deck.gl layers

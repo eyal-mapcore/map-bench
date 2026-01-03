@@ -97,6 +97,9 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
         '3d-tiles': {
           loadGLTF: true,
           decodeQuantizedPositions: false
+        },
+        gltf: {
+          normalize: true
         }
       },
       screenSpaceError: 8,
@@ -104,9 +107,26 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
       maximumMemoryUsage: 1024 * 1024 * 1024,
       opacity: 1,
       onTilesetLoad: () => console.log('✓ Google 3D Tileset loaded'),
-      onTileLoad: () => {
+      onTileLoad: (tile) => {
+        const content = tile.content;
+        if (content && content.gltf && content.gltf.meshes) {
+          content.gltf.meshes.forEach(mesh => {
+            mesh.primitives?.forEach(primitive => {
+              if (primitive.indices) {
+                if (primitive.indices.value instanceof Uint8Array) {
+                  primitive.indices.value = new Uint16Array(primitive.indices.value);
+                  if (primitive.indices.componentType === 5121) {
+                    primitive.indices.componentType = 5123;
+                  }
+                } else if (primitive.indices instanceof Uint8Array) {
+                  primitive.indices = new Uint16Array(primitive.indices);
+                }
+              }
+            });
+          });
+        }
         if (onTileLoad) {
-          onTileLoad()
+          onTileLoad(tile)
         }
       },
       onTileError: () => {}
