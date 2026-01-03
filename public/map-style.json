@@ -11,6 +11,12 @@
       "hindu": "/sprites/hindu.svg",
       "shinto": "/sprites/shinto.svg",
       "default": "/sprites/default.svg"
+    },
+    "flightTracking": {
+      "icon": "/sprites/airplane.svg",
+      "iconSize": 36,
+      "updateInterval": 10000,
+      "bboxRadius": 0.5
     }
   },
   "sources": {

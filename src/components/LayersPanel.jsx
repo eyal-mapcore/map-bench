@@ -24,6 +24,19 @@ export const LAYERS_CONFIG = [
     // OSM Places of Worship - point features with icons
     // Data fetched from OpenStreetMap Overpass API
     opacity: 1
+  },
+  {
+    id: 'flight-tracking',
+    name: 'מעקב טיסות',
+    subtitle: 'עידכון בזמן אמת כל 10 שניות',
+    icon: '✈️',
+    description: 'מעקב טיסות בזמן אמת מ-OpenSky Network. מציג מטוסים באזור המיקום הנבחר עם כיוון, גובה ומהירות.',
+    defaultVisible: false,
+    // Real-time flight tracking from OpenSky Network API
+    // Updates every 10 seconds, filtered by selected location
+    dynamic: true,
+    updateInterval: 10000, // 10 seconds
+    opacity: 1
   }
 ]
 

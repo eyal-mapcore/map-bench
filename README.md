@@ -38,6 +38,7 @@ The application includes a Layers Panel to visualize additional data sets:
 |-------|------|-------------|--------|
 | **High Voltage Power Lines** | ⚡ | Displayed at 15m height to visualize building clearance | OpenStreetMap |
 | **Religious Buildings** | 🕌 | Points of interest including Synagogues, Churches, and Mosques | OpenStreetMap |
+| **Flight Tracking** | ✈️ | Real-time aircraft positions with altitude and velocity | OpenSky Network |
 
 ## 🏙️ Pre-configured Locations
 

@@ -2,13 +2,15 @@ import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 
 import mapboxgl from 'mapbox-gl'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Tile3DLayer } from '@deck.gl/geo-layers'
-import { IconLayer, LineLayer } from '@deck.gl/layers'
+import { IconLayer, LineLayer, ScatterplotLayer } from '@deck.gl/layers'
+import { TripsLayer } from '@deck.gl/geo-layers'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
 import { CONTINENTS, INITIAL_ZOOM, INITIAL_PITCH, INITIAL_BEARING } from '../components/LocationSelector'
 import { DEFAULT_RELIGION_ICONS, getIconUrl } from '../utils/mapStyleConfig'
+import { flightTracker } from '../dynamic-layers/flightTracker'
 
 // Height for floating religious icons above buildings (meters)
 const RELIGIOUS_ICON_HEIGHT = 50
@@ -34,8 +36,20 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
   const religiousBuildingsData = useRef(null)
   const layersStateRef = useRef(layers)
   
+  // Flight tracking
+  const flightData = useRef({ type: 'FeatureCollection', features: [] })
+  const flightPaths = useRef({ type: 'FeatureCollection', features: [] })
+  const animationRef = useRef(null)
+  const currentTime = useRef(Date.now() / 1000)
+  const aircraftIconLoaded = useRef(null) // Pre-loaded aircraft icon
+  const fullStyleRef = useRef(null)
+  const religiousIconsLoaded = useRef(false)
+  const isFlightLayerInitializing = useRef(false)
+  
   // Store initialCamera value at first render for use in effects
   const initialCameraOnMount = useRef(initialCamera)
+  // Store initial location to prevent unwanted flyTo on mount
+  const initialLocationRef = useRef(currentLocation)
 
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
@@ -142,6 +156,164 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
     return [linesLayer, iconsLayer]
   }, [])
 
+  // Create deck.gl layer for flight tracking
+  const createFlightLayers = useCallback((time) => {
+    const layers = []
+    
+    // Flight Paths are now handled via native Mapbox layer
+    // See updateFlightLayer() function
+    
+    return layers
+  }, [])
+
+  // Update native Mapbox flight layer (not deck.gl)
+  const updateFlightLayer = useCallback(() => {
+    if (!map.current) return
+    
+    // Update icons
+    if (flightData.current && flightData.current.features?.length) {
+      const source = map.current.getSource('flight-data')
+      if (source) {
+        source.setData(flightData.current)
+      }
+    }
+
+    // Update paths
+    if (flightPaths.current && flightPaths.current.features?.length) {
+      const source = map.current.getSource('flight-paths-data')
+      if (source) {
+        source.setData(flightPaths.current)
+      }
+    }
+  }, [])
+
+  // Initialize native Mapbox flight layer
+  const initFlightLayer = useCallback(async () => {
+    if (!map.current || isFlightLayerInitializing.current) return
+    
+    isFlightLayerInitializing.current = true
+
+    try {
+      // 1. Flight Paths Layer
+      if (!map.current.getSource('flight-paths-data')) {
+        map.current.addSource('flight-paths-data', {
+          type: 'geojson',
+          data: flightPaths.current || { type: 'FeatureCollection', features: [] }
+        })
+
+        map.current.addLayer({
+          id: 'flight-paths-layer',
+          type: 'line',
+          source: 'flight-paths-data',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+            'visibility': 'visible' // Set visible - initFlightLayer is only called when layer should be visible
+          },
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 1.5,
+            'line-dasharray': [2, 2]
+          }
+        })
+      }
+
+      // 2. Aircraft Icons Layer
+      // Load aircraft icon (Lazy)
+      if (!map.current.hasImage('aircraft-icon')) {
+        try {
+          const img = new Image(64, 64)
+          img.src = '/sprites/airplane-fr24.svg'
+          await new Promise((resolve, reject) => {
+            img.onload = resolve
+            img.onerror = reject
+          })
+          if (map.current && !map.current.hasImage('aircraft-icon')) {
+            map.current.addImage('aircraft-icon', img, { sdf: false })
+            console.log('✓ MapBox: Aircraft icon loaded (Lazy)')
+          }
+        } catch (e) {
+          console.warn('Failed to load aircraft icon:', e)
+          // Don't return here, try to continue with other layers or retry later
+        }
+      }
+      
+      // Add source if not exists
+      if (!map.current.getSource('flight-data')) {
+        map.current.addSource('flight-data', {
+          type: 'geojson',
+          data: flightData.current || { type: 'FeatureCollection', features: [] }
+        })
+      }
+      
+      // Add layer if not exists
+      if (!map.current.getLayer('flight-icons')) {
+        map.current.addLayer({
+          id: 'flight-icons',
+          type: 'symbol',
+          source: 'flight-data',
+          layout: {
+            'icon-image': 'aircraft-icon',
+            'icon-size': 0.4, // ~25px (64px * 0.4 = 25.6px)
+            'icon-rotate': ['get', 'heading'],
+            'icon-rotation-alignment': 'map',
+            'icon-pitch-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            // Elevate icons based on altitude (meters) - scale down for visual effect
+            'symbol-z-elevate': true,
+            'visibility': 'visible' // Set visible - initFlightLayer is only called when layer should be visible
+          }
+        })
+
+        // Add hover popup
+        map.current.on('mouseenter', 'flight-icons', (e) => {
+          map.current.getCanvas().style.cursor = 'pointer'
+          if (e.features && e.features[0]) {
+            const props = e.features[0].properties
+            const tooltip = document.getElementById('flight-tooltip')
+            if (tooltip) {
+              tooltip.innerHTML = `
+                <strong>${props.callsign}</strong><br/>
+                גובה: ${props.altitudeFeet?.toLocaleString() || 'N/A'} ft<br/>
+                מהירות: ${props.velocityKnots || 'N/A'} קשר<br/>
+                כיוון: ${Math.round(props.heading || 0)}°
+              `
+              tooltip.style.display = 'block'
+              tooltip.style.left = `${e.point.x + 10}px`
+              tooltip.style.top = `${e.point.y + 10}px`
+            }
+          }
+        })
+        
+        map.current.on('mouseleave', 'flight-icons', () => {
+          map.current.getCanvas().style.cursor = ''
+          const tooltip = document.getElementById('flight-tooltip')
+          if (tooltip) tooltip.style.display = 'none'
+        })
+        
+        console.log('✓ MapBox: Native flight layer initialized')
+      }
+
+      // CRITICAL: Check visibility state again after async operations
+      // This handles the race condition where user toggles layer OFF while we were loading the icon
+      const isVisible = layersStateRef.current['flight-tracking']?.visible
+      
+      if (!isVisible) {
+        // User turned off layer while we were initializing - hide it
+        if (map.current.getLayer('flight-icons')) {
+          map.current.setLayoutProperty('flight-icons', 'visibility', 'none')
+        }
+        if (map.current.getLayer('flight-paths-layer')) {
+          map.current.setLayoutProperty('flight-paths-layer', 'visibility', 'none')
+        }
+      }
+
+    } finally {
+      isFlightLayerInitializing.current = false
+    }
+  }, [updateFlightLayer])
+
   useEffect(() => {
     // Skip if map already exists (React Strict Mode double-render protection)
     if (map.current || mapInitialized.current) return
@@ -181,7 +353,8 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
     map.current.once('style.load', () => {
       const powerLinesVisible = layersStateRef.current['power-lines']?.visible
       const religiousBuildingsVisible = layersStateRef.current['religious-buildings']?.visible
-      const shouldHideBasemap = powerLinesVisible || religiousBuildingsVisible
+      const flightTrackingVisible = layersStateRef.current['flight-tracking']?.visible
+      const shouldHideBasemap = powerLinesVisible || religiousBuildingsVisible || flightTrackingVisible
 
       if (shouldHideBasemap && map.current) {
         const style = map.current.getStyle()
@@ -202,19 +375,9 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
     map.current.on('load', async () => {
       isMapLoaded.current = true
       
-      // Load religious buildings data for 3D mode
-      try {
-        const response = await fetch('/data/religious-buildings.geojson')
-        religiousBuildingsData.current = await response.json()
-        console.log('✓ Mapbox: Religious buildings data loaded for 3D mode')
-      } catch (e) {
-        console.warn('Failed to load religious buildings data:', e)
-      }
-      
-      const tile3dLayer = viewMode === '3d' ? createTile3DLayer() : null
-      overlay.current = new MapboxOverlay({ interleaved: true, layers: tile3dLayer ? [tile3dLayer] : [] })
-      map.current.addControl(overlay.current)
+      // Religious buildings data for 3D mode is now lazy loaded in applyLayersState
 
+      
       map.current.addSource('mapbox-dem', {
         type: 'raster-dem',
         url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
@@ -240,33 +403,18 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
       try {
         const styleResponse = await fetch(MAP_STYLE_URL)
         const styleJson = await styleResponse.json()
+        fullStyleRef.current = styleJson
         
-        // Add sources from style JSON
+        // Add sources from style JSON (skip heavy ones)
         for (const [sourceId, sourceConfig] of Object.entries(styleJson.sources || {})) {
           // Skip satellite source - we use Mapbox's own
           if (sourceId === 'satellite') continue
           
+          // Skip heavy sources for lazy loading
+          if (sourceId === 'power-lines' || sourceId === 'religious-buildings') continue
+          
           if (!map.current.getSource(sourceId)) {
             map.current.addSource(sourceId, sourceConfig)
-          }
-        }
-
-        // Load religious building icons as SVG images
-        const religionIcons = ['jewish', 'christian', 'muslim', 'buddhist', 'hindu', 'shinto', 'default']
-        
-        for (const religion of religionIcons) {
-          try {
-            const img = new Image(24, 24)
-            img.src = `/sprites/${religion}.svg`
-            await new Promise((resolve, reject) => {
-              img.onload = resolve
-              img.onerror = reject
-            })
-            if (!map.current.hasImage(`icon-${religion}`)) {
-              map.current.addImage(`icon-${religion}`, img, { sdf: false })
-            }
-          } catch (e) {
-            console.warn(`Failed to load icon: ${religion}`, e)
           }
         }
 
@@ -275,9 +423,12 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
         const religiousBuildingsVisible = layersStateRef.current['religious-buildings']?.visible
         const is3D = currentViewMode.current === '3d'
 
-        // Add layers from style JSON (skip satellite layer)
+        // Add layers from style JSON (skip satellite layer and heavy layers)
         for (const layer of (styleJson.layers || [])) {
           if (layer.id === 'satellite-layer') continue
+          
+          // Skip heavy layers for lazy loading
+          if (layer.id.startsWith('power-lines') || layer.id.startsWith('religious-buildings')) continue
           
           // Clone layer to avoid modifying the original
           const layerCopy = JSON.parse(JSON.stringify(layer))
@@ -287,33 +438,52 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
             layerCopy.layout['text-font'] = ['DIN Offc Pro Medium', 'Arial Unicode MS Regular']
           }
           
-          // Set initial visibility based on layer state (no flash!)
-          if (!layerCopy.layout) layerCopy.layout = {}
-          
-          if (layerCopy.id.startsWith('power-lines')) {
-            layerCopy.layout.visibility = powerLinesVisible ? 'visible' : 'none'
-          } else if (layerCopy.id.startsWith('religious-buildings')) {
-            layerCopy.layout.visibility = religiousBuildingsVisible && !is3D ? 'visible' : 'none'
-          }
-          
           if (!map.current.getLayer(layerCopy.id)) {
             map.current.addLayer(layerCopy)
           }
         }
         
         styleLayersReady.current = true
-        console.log('✓ Mapbox: Layers loaded from map-style.json')
+        console.log('✓ Mapbox: Base layers loaded from map-style.json')
         
-        // Update deck.gl layers for 3D mode immediately
-        if (overlay.current && is3D && religiousBuildingsVisible) {
-          const deckLayers = [createTile3DLayer(), ...createReligious3DLayers()]
-          overlay.current.setProps({ layers: deckLayers })
-        }
+        // Apply initial layer visibility state immediately
+        // This will trigger loading of layers if they are set to visible
+        applyLayersState().catch(e => console.warn('Error applying layers:', e))
         
-        console.log('✓ Mapbox: Initial layer state applied')
       } catch (e) {
         console.error('Failed to load style JSON:', e)
       }
+
+      // Build initial deck.gl layers
+      const deckLayers = []
+      const is3DMode = currentViewMode.current === '3d'
+      
+      if (is3DMode) {
+        deckLayers.push(createTile3DLayer())
+        // Add 3D religious buildings if visible
+        if (layersStateRef.current['religious-buildings']?.visible) {
+          deckLayers.push(...createReligious3DLayers())
+        }
+      }
+
+      // Add flight tracking layers (paths only - icons are native Mapbox)
+      if (layersStateRef.current['flight-tracking']?.visible) {
+        deckLayers.push(...createFlightLayers(currentTime.current))
+      }
+      
+      // Initialize MapboxOverlay
+      overlay.current = new MapboxOverlay({ 
+        interleaved: true, 
+        layers: deckLayers 
+      })
+      map.current.addControl(overlay.current)
+      
+      // Initialize native flight layer for aircraft icons (only if visible)
+      if (layersStateRef.current['flight-tracking']?.visible) {
+        initFlightLayer()
+      }
+      
+      console.log('✓ Mapbox: Initial layer state applied')
 
     })
 
@@ -334,9 +504,10 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
   useEffect(() => {
     if (!map.current) return
 
-    // Skip the first flyTo if we used initialCamera (preserves camera state when switching maps)
-    if (initialCameraOnMount.current && !hasSkippedFirstFlyTo.current) {
-      hasSkippedFirstFlyTo.current = true
+    // If we initialized with a specific camera (initialCamera), 
+    // we want to avoid flying to the currentLocation on mount.
+    // We only fly if the location has actually changed since mount.
+    if (initialCameraOnMount.current && currentLocation === initialLocationRef.current) {
       return
     }
 
@@ -373,17 +544,137 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
       deckLayers.push(...religiousLayers)
     }
     
+    // Add flight tracking layer if visible
+    if (layersStateRef.current['flight-tracking']?.visible) {
+      const flightLayers = createFlightLayers(currentTime.current)
+      deckLayers.push(...flightLayers)
+    }
+    
     overlay.current.setProps({ layers: deckLayers })
-  }, [createTile3DLayer, createReligious3DLayers])
+  }, [createTile3DLayer, createReligious3DLayers, createFlightLayers])
+
+  // Animation loop for TripsLayer
+  useEffect(() => {
+    const animate = () => {
+      currentTime.current = Date.now() / 1000
+      
+      // Only update if flight tracking is visible to save performance
+      if (layersStateRef.current['flight-tracking']?.visible) {
+        updateOverlayLayers()
+      }
+      
+      animationRef.current = requestAnimationFrame(animate)
+    }
+    
+    animationRef.current = requestAnimationFrame(animate)
+    
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+      }
+    }
+  }, [updateOverlayLayers])
 
   // Apply current layer visibility state - called both on initial load and when layers change
-  const applyLayersState = useCallback(() => {
-    if (!map.current || !isMapLoaded.current || !styleLayersReady.current) return
+  const applyLayersState = useCallback(async () => {
+    // We need style to be ready, but we DON'T need map to be fully loaded (tiles loaded)
+    if (!map.current || !styleLayersReady.current) return
 
     const currentLayers = layersStateRef.current
     const powerLinesVisible = currentLayers['power-lines']?.visible
     const religiousBuildingsVisible = currentLayers['religious-buildings']?.visible
+    const flightTrackingVisible = currentLayers['flight-tracking']?.visible
     const is3D = currentViewMode.current === '3d'
+    const styleJson = fullStyleRef.current
+
+    // Lazy load Power Lines
+    if (powerLinesVisible && styleJson) {
+      // Add source if missing
+      if (!map.current.getSource('power-lines')) {
+        console.log('Lazy loading Power Lines source...')
+        map.current.addSource('power-lines', styleJson.sources['power-lines'])
+      }
+      
+      // Add layers if missing
+      const powerLayers = styleJson.layers.filter(l => l.id.startsWith('power-lines'))
+      for (const layer of powerLayers) {
+        if (!map.current.getLayer(layer.id)) {
+          const layerCopy = JSON.parse(JSON.stringify(layer))
+          // Ensure visibility is set correctly
+          if (!layerCopy.layout) layerCopy.layout = {}
+          layerCopy.layout.visibility = 'visible'
+          map.current.addLayer(layerCopy)
+        }
+      }
+    }
+
+    // Lazy load Religious Buildings
+    if (religiousBuildingsVisible && styleJson) {
+      // 1. Load Icons if needed
+      if (!religiousIconsLoaded.current) {
+        console.log('Lazy loading Religious Icons...')
+        const religionIcons = ['jewish', 'christian', 'muslim', 'buddhist', 'hindu', 'shinto', 'default']
+        
+        await Promise.all(religionIcons.map(async (religion) => {
+          try {
+            if (map.current && !map.current.hasImage(`icon-${religion}`)) {
+              const img = new Image(24, 24)
+              img.src = `/sprites/${religion}.svg`
+              await new Promise((resolve, reject) => {
+                img.onload = resolve
+                img.onerror = reject
+              })
+              if (map.current && !map.current.hasImage(`icon-${religion}`)) {
+                map.current.addImage(`icon-${religion}`, img, { sdf: false })
+              }
+            }
+          } catch (e) {
+            console.warn(`Failed to load icon: ${religion}`, e)
+          }
+        }))
+        
+        if (!map.current) return
+        religiousIconsLoaded.current = true
+      }
+
+      // 2. Load Source if missing
+      if (!map.current.getSource('religious-buildings')) {
+        console.log('Lazy loading Religious Buildings source...')
+        map.current.addSource('religious-buildings', styleJson.sources['religious-buildings'])
+      }
+
+      // 3. Load Layers if missing
+      const religiousLayers = styleJson.layers.filter(l => l.id.startsWith('religious-buildings'))
+      for (const layer of religiousLayers) {
+        if (!map.current.getLayer(layer.id)) {
+          const layerCopy = JSON.parse(JSON.stringify(layer))
+          
+          // Replace fonts
+          if (layerCopy.layout?.['text-font']) {
+            layerCopy.layout['text-font'] = ['DIN Offc Pro Medium', 'Arial Unicode MS Regular']
+          }
+          
+          if (!layerCopy.layout) layerCopy.layout = {}
+          layerCopy.layout.visibility = !is3D ? 'visible' : 'none'
+          
+          map.current.addLayer(layerCopy)
+        }
+      }
+      
+      // 4. Load Data for 3D mode if missing
+      if (is3D && !religiousBuildingsData.current) {
+        try {
+          console.log('Lazy loading Religious Buildings data for 3D...')
+          const response = await fetch('/data/religious-buildings.geojson')
+          if (!map.current) return
+          religiousBuildingsData.current = await response.json()
+        } catch (e) {
+          console.warn('Failed to load religious buildings data:', e)
+        }
+      }
+    }
+
+    if (!map.current) return
 
     // Toggle power lines layer visibility (layer IDs from map-style.json)
     const powerVisibility = powerLinesVisible ? 'visible' : 'none'
@@ -410,17 +701,58 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
       map.current.setLayoutProperty('religious-buildings-label', 'visibility', religiousVisibility)
     }
 
+    // Toggle flight tracking layer visibility (native Mapbox layer)
+    if (flightTrackingVisible) {
+      // Check if we need to initialize layers (either icons or paths missing)
+      const hasIcons = !!map.current.getLayer('flight-icons')
+      const hasPaths = !!map.current.getLayer('flight-paths-layer')
+      
+      if (!hasIcons || !hasPaths) {
+        console.log('Lazy loading Flight Tracker layers...')
+        await initFlightLayer()
+      }
+      
+      // Always set visibility to visible after init (whether newly created or existing)
+      if (map.current.getLayer('flight-icons')) {
+        map.current.setLayoutProperty('flight-icons', 'visibility', 'visible')
+      }
+      if (map.current.getLayer('flight-paths-layer')) {
+        map.current.setLayoutProperty('flight-paths-layer', 'visibility', 'visible')
+      }
+      
+      // Force update data to ensure icons appear
+      updateFlightLayer()
+    } else {
+      if (map.current.getLayer('flight-icons')) {
+        map.current.setLayoutProperty('flight-icons', 'visibility', 'none')
+      }
+      if (map.current.getLayer('flight-paths-layer')) {
+        map.current.setLayoutProperty('flight-paths-layer', 'visibility', 'none')
+      }
+      // Clear flight data when layer is hidden
+      flightData.current = { type: 'FeatureCollection', features: [] }
+      flightPaths.current = { type: 'FeatureCollection', features: [] }
+      // Update sources with empty data
+      if (map.current.getSource('flight-data')) {
+        map.current.getSource('flight-data').setData(flightData.current)
+      }
+      if (map.current.getSource('flight-paths-data')) {
+        map.current.getSource('flight-paths-data').setData(flightPaths.current)
+      }
+    }
+
     // Update deck.gl layers (3D mode)
     updateOverlayLayers()
 
 
-    // When power lines OR religious buildings are visible, hide all non-essential basemap layers
+    // When power lines OR religious buildings OR flight tracking are visible, hide all non-essential basemap layers
     const style = map.current.getStyle()
     if (style && style.layers) {
       style.layers.forEach(layer => {
-        // Skip our own layers (from map-style.json)
+        // Skip our own layers (from map-style.json and flight tracking)
         if (layer.id.startsWith('power-lines') || 
-            layer.id.startsWith('religious-buildings') || 
+            layer.id.startsWith('religious-buildings') ||
+            layer.id.startsWith('flight-') ||
             layer.id === 'sky') {
           return
         }
@@ -438,7 +770,7 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
         // Hide all other basemap layers (labels, roads, buildings, etc.) when custom layers visible
         if (layer.type === 'symbol' || layer.type === 'line' || layer.type === 'fill' || layer.type === 'fill-extrusion') {
           try {
-            const targetVisibility = (powerLinesVisible || religiousBuildingsVisible) ? 'none' : 'visible'
+            const targetVisibility = (powerLinesVisible || religiousBuildingsVisible || flightTrackingVisible) ? 'none' : 'visible'
             map.current.setLayoutProperty(layer.id, 'visibility', targetVisibility)
           } catch (e) {
             // Some layers might not support visibility changes
@@ -495,17 +827,71 @@ const MapBox = forwardRef(({ currentLocation, viewMode = '3d', isActive = true, 
     applyLayersState()
   }, [layers, applyLayersState])
 
+  // Initialize Flight Tracker (Lazy Load)
+  useEffect(() => {
+    const isVisible = layersStateRef.current['flight-tracking']?.visible
+    
+    if (isVisible) {
+      // Update center
+      const continent = CONTINENTS[currentLocation.continent]
+      if (continent) {
+        const location = continent.locations[currentLocation.city]
+        if (location) {
+          flightTracker.setCenter(location.coords[0], location.coords[1])
+        }
+      }
+
+      // Subscribe to updates
+      const unsubscribe = flightTracker.subscribe((data, paths) => {
+        flightData.current = data
+        flightPaths.current = paths
+        updateOverlayLayers()
+        updateFlightLayer()
+      })
+
+      // Initialize native flight layer when map is ready
+      if (map.current && isMapLoaded.current) {
+        initFlightLayer()
+      }
+
+      return () => {
+        unsubscribe()
+      }
+    }
+  }, [layers, currentLocation, updateOverlayLayers, updateFlightLayer, initFlightLayer])
+
   return (
-    <div 
-      ref={mapContainer} 
-      style={{
-        width: '100%',
-        height: '100vh',
-        position: 'absolute',
-        top: 0,
-        left: 0
-      }}
-    />
+    <>
+      <div 
+        ref={mapContainer} 
+        style={{
+          width: '100%',
+          height: '100vh',
+          position: 'absolute',
+          top: 0,
+          left: 0
+        }}
+      />
+      {/* Flight tooltip */}
+      <div
+        id="flight-tooltip"
+        style={{
+          display: 'none',
+          position: 'absolute',
+          background: 'rgba(15, 23, 42, 0.95)',
+          color: '#fff',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          fontSize: '12px',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          direction: 'rtl',
+          pointerEvents: 'none',
+          zIndex: 1000,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(255,255,255,0.1)'
+        }}
+      />
+    </>
   )
 })
 

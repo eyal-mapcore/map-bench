@@ -16,7 +16,8 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon
 
 import { CONTINENTS, INITIAL_ZOOM } from '../components/LocationSelector'
-import { loadMapStyle, getReligionIconUrls, getIconUrl } from '../utils/mapStyleConfig'
+import { loadMapStyle, getReligionIconUrls, getIconUrl, loadReligiousBuildings, loadPowerLines } from '../utils/mapStyleConfig'
+import { flightTracker } from '../dynamic-layers/flightTracker'
 
 const RELIGION_COLORS = {
   jewish: '#3b82f6',
@@ -43,6 +44,8 @@ const MapLeaflet = forwardRef(({ currentLocation, viewMode, isActive, onTileLoad
   // Layer references
   const powerLinesLayer = useRef(null)
   const religiousBuildingsLayer = useRef(null)
+  const flightLayer = useRef(null)
+  const flightPathLayer = useRef(null)
   
   // State to track initial location to prevent unwanted flyTo on mount
   const initialLocationRef = useRef(currentLocation)
@@ -117,74 +120,10 @@ const MapLeaflet = forwardRef(({ currentLocation, viewMode, isActive, onTileLoad
       map.on('moveend', () => onTileLoad(1))
     }
 
-    // Load Map Style and Data
-    loadMapStyle().then(async (style) => {
-      const religionIcons = getReligionIconUrls(style)
-      
-      // 1. Load Power Lines
-      try {
-        const powerLinesSource = style.sources['power-lines']
-        if (powerLinesSource && powerLinesSource.data) {
-          const response = await fetch(powerLinesSource.data)
-          const data = await response.json()
-          
-          powerLinesLayer.current = L.geoJSON(data, {
-            style: {
-              color: '#ffdc00',
-              weight: 4,
-              opacity: 0.8
-            }
-          })
-          
-          // Initial visibility check
-          if (layers && layers['power-lines']?.visible) {
-            powerLinesLayer.current.addTo(map)
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load power lines:', err)
-      }
-
-      // 2. Load Religious Buildings
-      try {
-        const religiousSource = style.sources['religious-buildings']
-        if (religiousSource && religiousSource.data) {
-          const response = await fetch(religiousSource.data)
-          const data = await response.json()
-          
-          religiousBuildingsLayer.current = L.geoJSON(data, {
-            pointToLayer: (feature, latlng) => {
-              const religion = feature.properties.religion || 'default'
-              const color = RELIGION_COLORS[religion] || RELIGION_COLORS.default
-              
-              // Calculate radius based on initial zoom
-              const currentZoom = map.getZoom()
-              const radius = getRadiusForZoom(currentZoom)
-
-              return L.circleMarker(latlng, {
-                radius: radius,
-                fillColor: color,
-                color: '#fff',
-                weight: 1,
-                opacity: 1,
-                fillOpacity: 0.8
-              })
-            },
-            onEachFeature: (feature, layer) => {
-              if (feature.properties && feature.properties.name) {
-                layer.bindPopup(feature.properties.name)
-              }
-            }
-          })
-
-          // Initial visibility check
-          if (layers && layers['religious-buildings']?.visible) {
-            religiousBuildingsLayer.current.addTo(map)
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load religious buildings:', err)
-      }
+    // Load Map Style (just for metadata)
+    loadMapStyle().then((style) => {
+      // We just need the style loaded to ensure we have metadata if needed
+      // Data loading is now lazy in the visibility effect
     })
 
     // Update radius on zoom
@@ -236,32 +175,185 @@ const MapLeaflet = forwardRef(({ currentLocation, viewMode, isActive, onTileLoad
   useEffect(() => {
     if (!mapInstance.current) return
     
-    // Power Lines
-    if (powerLinesLayer.current) {
+    const handlePowerLines = async () => {
       if (layers['power-lines']?.visible) {
-        if (!mapInstance.current.hasLayer(powerLinesLayer.current)) {
+        if (!powerLinesLayer.current) {
+          try {
+            const data = await loadPowerLines()
+            powerLinesLayer.current = L.geoJSON(data, {
+              style: {
+                color: '#ffdc00',
+                weight: 4,
+                opacity: 0.8
+              }
+            })
+          } catch (err) {
+            console.error('Failed to load power lines:', err)
+            return
+          }
+        }
+        
+        if (powerLinesLayer.current && !mapInstance.current.hasLayer(powerLinesLayer.current)) {
           powerLinesLayer.current.addTo(mapInstance.current)
         }
       } else {
-        if (mapInstance.current.hasLayer(powerLinesLayer.current)) {
+        if (powerLinesLayer.current && mapInstance.current.hasLayer(powerLinesLayer.current)) {
           mapInstance.current.removeLayer(powerLinesLayer.current)
         }
       }
     }
 
-    // Religious Buildings
-    if (religiousBuildingsLayer.current) {
+    const handleReligiousBuildings = async () => {
       if (layers['religious-buildings']?.visible) {
-        if (!mapInstance.current.hasLayer(religiousBuildingsLayer.current)) {
+        if (!religiousBuildingsLayer.current) {
+          try {
+            const data = await loadReligiousBuildings()
+            religiousBuildingsLayer.current = L.geoJSON(data, {
+              pointToLayer: (feature, latlng) => {
+                const religion = feature.properties.religion || 'default'
+                const color = RELIGION_COLORS[religion] || RELIGION_COLORS.default
+                
+                // Calculate radius based on initial zoom
+                const currentZoom = mapInstance.current.getZoom()
+                const radius = getRadiusForZoom(currentZoom)
+
+                return L.circleMarker(latlng, {
+                  radius: radius,
+                  fillColor: color,
+                  color: '#fff',
+                  weight: 1,
+                  opacity: 1,
+                  fillOpacity: 0.8
+                })
+              },
+              onEachFeature: (feature, layer) => {
+                if (feature.properties && feature.properties.name) {
+                  layer.bindPopup(feature.properties.name)
+                }
+              }
+            })
+          } catch (err) {
+            console.error('Failed to load religious buildings:', err)
+            return
+          }
+        }
+
+        if (religiousBuildingsLayer.current && !mapInstance.current.hasLayer(religiousBuildingsLayer.current)) {
           religiousBuildingsLayer.current.addTo(mapInstance.current)
         }
       } else {
-        if (mapInstance.current.hasLayer(religiousBuildingsLayer.current)) {
+        if (religiousBuildingsLayer.current && mapInstance.current.hasLayer(religiousBuildingsLayer.current)) {
           mapInstance.current.removeLayer(religiousBuildingsLayer.current)
         }
       }
     }
+
+    handlePowerLines()
+    handleReligiousBuildings()
+    
   }, [layers])
+
+  // Handle Flights Layer
+  useEffect(() => {
+    if (!mapInstance.current) return
+
+    const isVisible = layers['flight-tracking']?.visible
+    
+    if (isVisible) {
+      // Initialize layers if needed
+      if (!flightLayer.current) {
+        flightLayer.current = L.layerGroup().addTo(mapInstance.current)
+      }
+      if (!flightPathLayer.current) {
+        flightPathLayer.current = L.layerGroup().addTo(mapInstance.current)
+      }
+      
+      // Add to map if not already
+      if (!mapInstance.current.hasLayer(flightLayer.current)) {
+        flightLayer.current.addTo(mapInstance.current)
+      }
+      if (!mapInstance.current.hasLayer(flightPathLayer.current)) {
+        flightPathLayer.current.addTo(mapInstance.current)
+      }
+
+      // Update center
+      const center = mapInstance.current.getCenter()
+      flightTracker.setCenter(center.lng, center.lat)
+
+      const unsubscribe = flightTracker.subscribe((data, paths) => {
+        if (!flightLayer.current || !flightPathLayer.current) return
+
+        // Update Aircrafts
+        flightLayer.current.clearLayers()
+        if (data && data.features) {
+          data.features.forEach(feature => {
+            const [lon, lat] = feature.geometry.coordinates
+            const { heading, callsign, altitudeFeet, velocityKnots } = feature.properties
+            
+            const marker = L.circleMarker([lat, lon], {
+              radius: 4,
+              fillColor: '#fbbf24', // Yellow
+              color: '#fff',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.9
+            })
+
+            marker.bindPopup(`
+              <div style="font-family: sans-serif;">
+                <div style="font-weight: bold; margin-bottom: 4px;">${callsign}</div>
+                <div>Alt: ${altitudeFeet} ft</div>
+                <div>Spd: ${velocityKnots} kts</div>
+                <div>Hdg: ${heading}°</div>
+              </div>
+            `)
+            marker.addTo(flightLayer.current)
+          })
+        }
+
+        // Update Paths
+        flightPathLayer.current.clearLayers()
+        if (paths && paths.features) {
+          L.geoJSON(paths, {
+            style: {
+              color: '#ffffff',
+              weight: 2,
+              opacity: 0.6,
+              dashArray: '5, 5'
+            }
+          }).addTo(flightPathLayer.current)
+        }
+      })
+
+      // Update center when map moves
+      const handleMoveEnd = () => {
+        const center = mapInstance.current.getCenter()
+        flightTracker.setCenter(center.lng, center.lat)
+      }
+      mapInstance.current.on('moveend', handleMoveEnd)
+
+      return () => {
+        unsubscribe()
+        if (mapInstance.current) {
+          mapInstance.current.off('moveend', handleMoveEnd)
+        }
+      }
+    } else {
+      // Hide/Remove layers
+      if (flightLayer.current) {
+        flightLayer.current.clearLayers()
+        if (mapInstance.current.hasLayer(flightLayer.current)) {
+          mapInstance.current.removeLayer(flightLayer.current)
+        }
+      }
+      if (flightPathLayer.current) {
+        flightPathLayer.current.clearLayers()
+        if (mapInstance.current.hasLayer(flightPathLayer.current)) {
+          mapInstance.current.removeLayer(flightPathLayer.current)
+        }
+      }
+    }
+  }, [layers['flight-tracking']?.visible])
 
   return <div ref={mapContainer} style={{ width: '100%', height: '100%', background: '#000' }} />
 })

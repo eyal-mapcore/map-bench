@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, lazy, Suspense } from 'react'
+import { useState, useRef, useCallback, lazy, Suspense, useEffect } from 'react'
 import { LocationSelector, CONTINENTS } from './components/LocationSelector'
 import { StatusBar } from './components/StatusBar'
 import { MapToggle } from './components/MapToggle'
 import { ViewModeToggle } from './components/ViewModeToggle'
 import { LayersPanel, LAYERS_CONFIG } from './components/LayersPanel'
+import { flightTracker } from './dynamic-layers/flightTracker'
 
 // Lazy load map components - only load when needed
 const MapBox = lazy(() => import('./maps/MapBox'))

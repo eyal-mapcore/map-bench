@@ -52,3 +52,76 @@ export function getIconUrl(icons, religion) {
   return icons[religion] || icons.default
 }
 
+// --- Caching for Resources ---
+
+// Cached religious buildings data
+let cachedReligiousBuildings = null
+let religiousBuildingsPromise = null
+
+export async function loadReligiousBuildings() {
+  if (cachedReligiousBuildings) return cachedReligiousBuildings
+  if (religiousBuildingsPromise) return religiousBuildingsPromise
+
+  religiousBuildingsPromise = fetch('/data/religious-buildings.geojson')
+    .then(res => res.json())
+    .then(data => {
+      cachedReligiousBuildings = data
+      return data
+    })
+    .catch(err => {
+      console.error('Failed to load religious buildings:', err)
+      religiousBuildingsPromise = null // Reset promise on error so we can try again
+      throw err
+    })
+    
+  return religiousBuildingsPromise
+}
+
+// Cached loaded images (HTMLImageElement)
+const cachedImages = {}
+const imageLoadingPromises = {}
+
+export async function loadIconImage(url) {
+  if (cachedImages[url]) return cachedImages[url]
+  if (imageLoadingPromises[url]) return imageLoadingPromises[url]
+
+  imageLoadingPromises[url] = new Promise((resolve, reject) => {
+    const img = new Image(24, 24)
+    img.src = url
+    img.onload = () => {
+      cachedImages[url] = img
+      resolve(img)
+    }
+    img.onerror = (e) => {
+      console.error(`Failed to load image: ${url}`, e)
+      delete imageLoadingPromises[url] // Reset promise on error
+      reject(e)
+    }
+  })
+
+  return imageLoadingPromises[url]
+}
+
+// Cached power lines data
+let cachedPowerLines = null
+let powerLinesPromise = null
+
+export async function loadPowerLines() {
+  if (cachedPowerLines) return cachedPowerLines
+  if (powerLinesPromise) return powerLinesPromise
+
+  powerLinesPromise = fetch('/data/power-lines.geojson')
+    .then(res => res.json())
+    .then(data => {
+      cachedPowerLines = data
+      return data
+    })
+    .catch(err => {
+      console.error('Failed to load power lines:', err)
+      powerLinesPromise = null
+      throw err
+    })
+    
+  return powerLinesPromise
+}
+
