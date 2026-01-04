@@ -17,6 +17,7 @@ Map Bench allows you to compare the performance and rendering quality of four ma
 | **ArcGIS (ESRI)** | Enterprise-grade 3D SceneView with IntegratedMesh3DTilesLayer |
 | **CesiumJS** | High-precision 3D globe for geospatial visualization |
 | **Leaflet** | Lightweight open-source JavaScript library for mobile-friendly interactive maps |
+| **MapCore  | Elbit's MapCore's JavaScript library for geospatial visualization
 
 > Want to add another map provider? Check out our [guide on adding new map components](src/maps/README.md).
 
@@ -102,8 +103,26 @@ The app includes curated locations organized by continent:
    VITE_GOOGLE_API_KEY=your_google_api_key_here
    VITE_ESRI_API_KEY=your_esri_api_key_here
    VITE_CESIUM_TOKEN=your_cesium_token_here
-   VITE_MAPTILER_KEY=your_maptiler_key_here
+   VITE_MAPTILER_KEY=your_maptiler_k
+   VITE_MAPCORE_SERVER_URL=development (http://localhost:5173) or production mapcore server's file
+   VITE_GOOGLE_3D_TILES_URL=https://tile.googleapis.com/v1/3dtiles/root.json
+   VITE_WAYBACK_MAPTILES_WMTS_URL=https://wayback.maptiles.arcgis.com/arcgis/rest/services/world_imagery/mapserver/wmts/1.0.0/wmtscapabilities.xml
    ```
+
+4. **MapCore Install**
+
+Perform the following command:
+   Perform the following bash commands:
+   ``` bash
+   export JFROG_TOKEN=your_jfrog_token (used by mapcore username)
+   ./install_mapcore.bash 12.4.0-MapBench-beta2
+   ```
+
+# WMTS LAYER SET
+VITE_WMTS_LAYERS_LIST = "WB_2025_R12"
+
+# WMTS SERVER CRS
+VITE_WMTS_TILING_SCHEME="GoogleMapsCompatible"   ```
 
 4. **Run the development server**
    ```bash
@@ -123,6 +142,7 @@ The app includes curated locations organized by continent:
 | **ESRI ArcGIS** | ✅ Yes | [developers.arcgis.com](https://developers.arcgis.com/documentation/mapping-apis-and-services/security/api-keys/) |
 | **Cesium Ion** | Optional | [cesium.com/ion/tokens](https://cesium.com/ion/tokens) |
 | **MapTiler** | Optional | [maptiler.com/cloud](https://www.maptiler.com/cloud/) |
+| **MapCore JFROG** | Yes | |Contact MapCore's team for token|(https://mapcore.jfrog.io)
 
 ### ESRI ArcGIS API Setup
 
@@ -163,16 +183,29 @@ map-bench/
 │   │   ├── MapToggle.jsx       # Map library switcher
 │   │   ├── StatusBar.jsx       # Status bar (tile count, etc.)
 │   │   └── ViewModeToggle.jsx  # 2D/3D toggle
+│   ├── lib/mapcore
+|   |   ├── mc-api.tsx          # MapCore's base component plugin for JavaScript/TypeScript
+|   |   ├── mc-callbacks.tsx    # MapCore's base asynchronous plugin
+|   |   ├── mc-EditMode.tsx     # MapCore's Object world editor logic
+|   |   └── utils.tsx           # MapCore's additional utility functions
 │   ├── maps/
 │   │   ├── MapBox.jsx          # Mapbox GL JS implementation
 │   │   ├── MapLibre.jsx        # MapLibre GL implementation
 │   │   ├── MapESRI.jsx         # ArcGIS/ESRI implementation
 │   │   └── MapCesium.jsx       # CesiumJS implementation
+|   ├── types/
+|   |   └── MapCore.d.ts        # MapCore's API typescript interfaces
 │   └── utils/
 │       ├── esriStyleConverter.js # Utilities for ESRI styles
 │       └── mapStyleConfig.js   # Map style configurations
 ├── public/
 │   ├── data/                   # GeoJSON data files
+│   ├── package/                
+│   |   ├── MapCore.js          # MapCore API JavaScrip library
+|   |   ├── MapCore.wasm        # MapCore API Web Assembly
+|   |   ├── MapCore.js.symbols  # MapCore API Symbols
+|   |   ├── MapCore.map         # MapCore API Symbol Mapper
+|   |   ├── MapCoreSymbology*.zip # Uses for NATO 2525 and US DOD App6D Symbyology standards
 │   ├── sprites/                # Map sprites
 │   ├── map-style.json          # Custom map style definition
 │   └── favicon.svg

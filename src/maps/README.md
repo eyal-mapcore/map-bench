@@ -33,6 +33,15 @@ Map implementation using **Leaflet** library.
 - Uses raster tiles (Esri World Imagery).
 - Supports GeoJSON layers and custom markers.
 
+### `MapCore.jsx`
+Map implementation using **MapCore** Library
+- Used for integration with MapCore services.
+- Supports complex information layers and enterprise map services.
+
+## Install MapCore libraries:
+
+To install MapCore libraries the run the following script
+
 ## How to Add a New Third-Party Map Component
 
 To add a new map provider (e.g., Google Maps, Leaflet, OpenLayers), follow these steps:

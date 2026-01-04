@@ -1193,7 +1193,7 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
             }
             
             let currLayer = MapCore.IMcRaw3DModelMapLayer.Create(
-                    remoteUrl!, getTerrainCrs(), true, 
+                    remoteUrl!, getTerrainCrs(), false, 
                     null, 0.0, layerCallback!, layerRequestParams);
             activeLayers.push(currLayer);
         }
@@ -2174,7 +2174,7 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
         _device.AddRef();
 
         (MapCore as any).__MaxAllowedGeometricError = 75.0;
-        (MapCore as any).__GeoErrorScaleFactor = 0.1;
+        (MapCore as any).__GeoErrorScaleFactor = 0.05;
 
         initCallbacks();
 
