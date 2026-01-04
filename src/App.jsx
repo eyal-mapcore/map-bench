@@ -128,6 +128,8 @@ function App() {
 
   const handleTileLoadMapcore = useCallback((count) => {
     setTilesLoaded(count)
+  }, [])
+
   const handleTileLoadLeaflet = useCallback((count) => {
     setTilesLoaded(prev => prev + count)
   }, [])
@@ -268,8 +270,6 @@ function App() {
             </div>
           )}
 
-          </Suspense>
-        </MapErrorBoundary>
           {mapType === 'leaflet' && (
             <MapLeaflet 
               ref={leafletRef}
@@ -281,7 +281,8 @@ function App() {
               initialCamera={getInitialCamera()}
             />
           )}
-        </Suspense>
+          </Suspense>
+        </MapErrorBoundary>
       </div>
 
       {/* Map Type Toggle */}

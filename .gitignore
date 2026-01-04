@@ -32,3 +32,4 @@ public/package/**
 # installation script for mapcore (has TOKEN in it)
 install_mapcore.bash
 
+*.jsx.sw*
