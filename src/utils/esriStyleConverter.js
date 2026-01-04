@@ -67,13 +67,15 @@ export const RELIGIOUS_ICON_HEIGHT_3D = 50
 // ============================================================================
 
 // Convert Mapbox zoom to ESRI scale (approximate)
+// Mapbox uses 512px tiles, so zoom level is 1 less than standard (Google/ESRI) for same scale
 export function zoomToScale(zoom) {
-  return 591657550.5 / Math.pow(2, zoom)
+  return 591657550.5 / Math.pow(2, zoom + 1)
 }
 
 // Convert ESRI scale to Mapbox zoom (approximate)
+// Mapbox uses 512px tiles, so zoom level is 1 less than standard (Google/ESRI) for same scale
 export function scaleToZoom(scale) {
-  return Math.log2(591657550.5 / scale)
+  return Math.log2(591657550.5 / scale) - 1
 }
 
 // ============================================================================

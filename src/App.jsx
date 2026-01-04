@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, lazy, Suspense, Component } from 'react'
+import { useState, useRef, useCallback, lazy, Suspense, Component, useEffect} from 'react'
 import { LocationSelector, CONTINENTS } from './components/LocationSelector'
 import { StatusBar } from './components/StatusBar'
 import { MapToggle } from './components/MapToggle'
 import { ViewModeToggle } from './components/ViewModeToggle'
 import { LayersPanel, LAYERS_CONFIG } from './components/LayersPanel'
+import { flightTracker } from './dynamic-layers/flightTracker'
 
 // Lazy load map components - only load when needed
 const MapBox = lazy(() => import('./maps/MapBox'))
@@ -16,13 +17,9 @@ const MapCore = lazy(() => {
     throw error
   })
 })
-const MapCesium = lazy(() => {
-  console.log('Loading Cesium component...')
-  return import('./maps/MapCesium').catch(error => {
-    console.error('Failed to load Cesium component:', error)
-    throw error
-  })
-})
+
+const MapCesium = lazy(() => import('./maps/MapCesium'))
+const MapLeaflet = lazy(() => import('./maps/MapLeaflet'))
 
 // Empty loading fallback - maps load fast enough
 const MapLoader = () => null
@@ -80,7 +77,7 @@ class MapErrorBoundary extends Component {
 }
 
 function App() {
-  const [mapType, setMapType] = useState('mapbox') // 'mapbox', 'esri', or 'cesium'
+  const [mapType, setMapType] = useState('maplibre') // 'mapbox', 'esri', or 'cesium'
   const [viewMode, setViewMode] = useState('2d') // '2d' or '3d'
   const [currentLocation, setCurrentLocation] = useState({ continent: 'northAmerica', city: 'newYork' })
   const [expandedContinent, setExpandedContinent] = useState('northAmerica')
@@ -106,6 +103,7 @@ function App() {
   const esriRef = useRef(null)
   const cesiumRef = useRef(null)
   const mapcoreRef = useRef(null)
+  const leafletRef = useRef(null)
 
   const handleLocationChange = useCallback((continentKey, cityKey) => {
     setCurrentLocation({ continent: continentKey, city: cityKey })
@@ -130,6 +128,8 @@ function App() {
 
   const handleTileLoadMapcore = useCallback((count) => {
     setTilesLoaded(count)
+  const handleTileLoadLeaflet = useCallback((count) => {
+    setTilesLoaded(prev => prev + count)
   }, [])
 
   const handleMapTypeChange = useCallback((newType) => {
@@ -146,6 +146,8 @@ function App() {
       camera = cesiumRef.current.getCamera()
     } else if (mapType === 'mapcore' && mapcoreRef.current) {
       camera = mapcoreRef.current.getCamera()
+    } else if (mapType === 'leaflet' && leafletRef.current) {
+      camera = leafletRef.current.getCamera()
     }
 
     // Save camera to shared ref (immediately available for new map)
@@ -268,6 +270,18 @@ function App() {
 
           </Suspense>
         </MapErrorBoundary>
+          {mapType === 'leaflet' && (
+            <MapLeaflet 
+              ref={leafletRef}
+              currentLocation={currentLocation}
+              viewMode={viewMode}
+              isActive={true}
+              onTileLoad={handleTileLoadLeaflet}
+              layers={layers}
+              initialCamera={getInitialCamera()}
+            />
+          )}
+        </Suspense>
       </div>
 
       {/* Map Type Toggle */}

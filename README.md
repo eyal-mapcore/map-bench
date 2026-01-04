@@ -8,7 +8,7 @@ A React-based benchmarking application for comparing different 3D mapping librar
 
 ## 🌟 Overview
 
-Map Bench allows you to compare the performance and rendering quality of four major mapping libraries, all displaying the same Google Photorealistic 3D Tiles:
+Map Bench allows you to compare the performance and rendering quality of four major mapping libraries, all displaying the same Google Photorealistic 3D Tiles. It also features a data layer system to visualize geospatial information like power lines and religious buildings on top of the 3D terrain.
 
 | Library | Description |
 |---------|-------------|
@@ -16,15 +16,29 @@ Map Bench allows you to compare the performance and rendering quality of four ma
 | **MapLibre GL** | Open-source fork of Mapbox GL JS |
 | **ArcGIS (ESRI)** | Enterprise-grade 3D SceneView with IntegratedMesh3DTilesLayer |
 | **CesiumJS** | High-precision 3D globe for geospatial visualization |
+| **Leaflet** | Lightweight open-source JavaScript library for mobile-friendly interactive maps |
+
+> Want to add another map provider? Check out our [guide on adding new map components](src/maps/README.md).
 
 ## ✨ Features
 
 - 🔄 **Seamless Map Switching** - Switch between mapping libraries while preserving camera position
 - 🌐 **Google 3D Tiles** - Photorealistic 3D buildings and terrain from Google Maps Platform
+- 📚 **Data Layers** - Toggleable overlays for geospatial data visualization
 - 🎛️ **2D/3D Toggle** - Switch between flat map view and 3D perspective
 - 📍 **Location Selector** - Pre-configured locations across 4 continents with quality ratings
 - 📊 **Tile Counter** - Real-time display of loaded 3D tiles
 - 🎨 **Modern UI** - Sleek dark theme with smooth animations
+
+## 🗺️ Data Layers
+
+The application includes a Layers Panel to visualize additional data sets:
+
+| Layer | Icon | Description | Source |
+|-------|------|-------------|--------|
+| **High Voltage Power Lines** | ⚡ | Displayed at 15m height to visualize building clearance | OpenStreetMap |
+| **Religious Buildings** | 🕌 | Points of interest including Synagogues, Churches, and Mosques | OpenStreetMap |
+| **Flight Tracking** | ✈️ | Real-time aircraft positions with altitude and velocity | OpenSky Network |
 
 ## 🏙️ Pre-configured Locations
 
@@ -143,14 +157,28 @@ map-bench/
 │   ├── App.jsx                 # Main application component
 │   ├── main.jsx                # React entry point
 │   ├── index.css               # Global styles
-│   └── components/
-│       ├── MapBox.jsx          # Mapbox GL JS implementation
-│       ├── MapLibre.jsx        # MapLibre GL implementation
-│       ├── MapESRI.jsx         # ArcGIS/ESRI implementation
-│       ├── MapCesium.jsx       # CesiumJS implementation
-│       └── LocationSelector.jsx # UI components (selector, toggles, status bar)
+│   ├── components/
+│   │   ├── LayersPanel.jsx     # Data layers control panel
+│   │   ├── LocationSelector.jsx # Location selection sidebar
+│   │   ├── MapToggle.jsx       # Map library switcher
+│   │   ├── StatusBar.jsx       # Status bar (tile count, etc.)
+│   │   └── ViewModeToggle.jsx  # 2D/3D toggle
+│   ├── maps/
+│   │   ├── MapBox.jsx          # Mapbox GL JS implementation
+│   │   ├── MapLibre.jsx        # MapLibre GL implementation
+│   │   ├── MapESRI.jsx         # ArcGIS/ESRI implementation
+│   │   └── MapCesium.jsx       # CesiumJS implementation
+│   └── utils/
+│       ├── esriStyleConverter.js # Utilities for ESRI styles
+│       └── mapStyleConfig.js   # Map style configurations
 ├── public/
+│   ├── data/                   # GeoJSON data files
+│   ├── sprites/                # Map sprites
+│   ├── map-style.json          # Custom map style definition
 │   └── favicon.svg
+├── scripts/
+│   ├── fetch-power-lines.js    # Script to fetch power lines data
+│   └── fetch-religious-buildings.js # Script to fetch religious buildings data
 ├── index.html
 ├── package.json
 ├── vite.config.js
