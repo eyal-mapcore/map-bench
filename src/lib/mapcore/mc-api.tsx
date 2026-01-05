@@ -52,6 +52,7 @@ var layerCallback: MapCore.IMcMapLayer.IReadCallback = null;               // ca
 export var aViewports: SViewportData[] = [];                    // SViewportData table
 var nMousePrevX: number = 0;                    // Last mouse X
 var nMousePrevY: number = 0;                    // Last mouse Y
+var rotationCenter: MapCore.SMcVector3D | null = null;
 var mouseDownButtons: number = 0;               // mask of pressed mouse buttons
 var terrainLayers: string[] = [];                 // layer identifiers of the terrain
 var ellipseSchemesGPU: MapCore.IMcObjectScheme = null;           // GPU ellipse scheme
@@ -882,7 +883,33 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
     // Mouse event handlers
     //----------------------------------------------------------------------------------------------------------------------
 
-    // +-buttons handler
+    /// Helper function to convert screen point to world point
+    /// @param viewport - the viewport to convert the screen point to world point
+    /// @param screenPoint - the screen point to convert to world point
+    /// @returns the world point or undefined if the conversion failed
+    const ViewportScreenToWorld = (viewport: MapCore.IMcMapViewport, screenPoint: MapCore.SMcVector3D) : MapCore.SMcVector3D | undefined => {
+        let bIntersection = false;
+        let WorldCenter : any = {};
+    
+        if (viewport.GetMapType() == MapCore.IMcMapCamera.EMapType.EMT_3D)
+        {
+            bIntersection = viewport.ScreenToWorldOnTerrain(screenPoint, WorldCenter);
+        }
+    
+        if (!bIntersection) // EMT_2D || !bIntersection
+        {
+            bIntersection = viewport.ScreenToWorldOnPlane(screenPoint, WorldCenter);   
+        }
+    
+        return (bIntersection ? new MapCore.SMcVector3D(
+            WorldCenter.Value.x, 
+            WorldCenter.Value.y, 
+            WorldCenter.Value.z) : undefined);        
+    }
+
+    /// Zoom handler
+    /// @param delta - the zoom delta
+    /// @returns void
     const handleZoom = (delta : number) => {
 
         let viewport: MapCore.IMcMapViewport = is2DActive ? viewport2D : viewport3D;
@@ -925,7 +952,7 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
         let factor: number = (e.shiftKey ? 10 : 1);
 
         if (viewport.GetMapType() === MapCore.IMcMapCamera.EMapType.EMT_3D) {
-            viewport.MoveCameraRelativeToOrientation(new MapCore.SMcVector3D(0, 0, wheelDelta / 8.0 * factor), true);
+            viewport.MoveCameraRelativeToOrientation(new MapCore.SMcVector3D(0, 0, wheelDelta / 8.0 * factor), false);
         }
         else {
             let fScale: number = viewport.GetCameraScale();
@@ -959,6 +986,10 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
         }
 
         let EventPixel: MapCore.SMcPoint = new MapCore.SMcPoint(e.offsetX, e.offsetY);
+        let uWidth : any = {};
+        let uHeight : any = {};
+        viewport.GetViewportSize(uWidth, uHeight);
+
         if (e.buttons <= 1) {
             let bHandled: any = {};
             let eCursor: any = {};//according to map-core
@@ -974,7 +1005,24 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
                 return;
             }
         }
-        if (e.buttons === 4)
+        else if (e.buttons === 2) {
+            if (rotationCenter) {
+                let mouseDelta = MapCore.SMcVector2D.Minus(
+                    new MapCore.SMcVector2D(nMousePrevX, nMousePrevY), 
+                    new MapCore.SMcVector2D(EventPixel.x, EventPixel.y));
+
+                viewport.RotateCameraAroundWorldPoint(rotationCenter, -mouseDelta.x * 360 / uWidth.Value!, 0, 0, false);
+
+                if (viewport.GetMapType() === MapCore.IMcMapCamera.EMapType.EMT_3D) 
+                {
+                    let pitch : any = {};
+                    viewport.GetCameraOrientation(null, pitch, null);
+                    viewport.RotateCameraAroundWorldPoint(rotationCenter, 0, 
+                        -Math.min(Math.max(-mouseDelta.y * 180 / uWidth.Value, -90 - pitch.Value), 90 - pitch.Value), 0, true);
+                }
+            }
+        }
+        else if (e.buttons === 4)
         {
             HandleDblClick(e);
             e.stopPropagation();
@@ -985,24 +1033,12 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
             if (nMousePrevX !== 0) {
                 let factor = (e.shiftKey ? 10 : 1);
                 if (viewport.GetMapType() === MapCore.IMcMapCamera.EMapType.EMT_3D) {
-                    if (e.ctrlKey) {
-                        viewport.MoveCameraRelativeToOrientation(
-                            new MapCore.SMcVector3D((nMousePrevX - EventPixel.x) / 2.0 * factor, -
-                                (nMousePrevY - EventPixel.y) / 2.0 * factor, 0), false);
-                    }
-                    else {
-                        viewport.RotateCameraRelativeToOrientation(
-                            (nMousePrevX - EventPixel.x) / 2.0, - (nMousePrevY - EventPixel.y) / 2.0, 0);
-                    }
+                    viewport.MoveCameraRelativeToOrientation(
+                        new MapCore.SMcVector3D((nMousePrevX - EventPixel.x) / 2.0 * factor, -
+                            (nMousePrevY - EventPixel.y) / 2.0 * factor, 0), false);
                 }
                 else {
-                    if (e.ctrlKey) {
-                        viewport.SetCameraOrientation((nMousePrevX - EventPixel.x) / 2.0,
-                            MapCore.FLT_MAX, MapCore.FLT_MAX, true);
-                    }
-                    else {
-                        viewport.ScrollCamera((nMousePrevX - EventPixel.x) * factor, (nMousePrevY - EventPixel.y) * factor);
-                    }
+                    viewport.ScrollCamera((nMousePrevX - EventPixel.x) * factor, (nMousePrevY - EventPixel.y) * factor);
                 }
 
                 e.preventDefault?.();
@@ -1046,6 +1082,18 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
             }
         }
 
+        // The following handles right click in case of rotation
+        if (e.buttons === 2) {
+            let uWidth : any = {};
+            let uHeight : any = {};
+            viewport.GetViewportSize(uWidth, uHeight);
+            rotationCenter = ViewportScreenToWorld(viewport, new MapCore.SMcVector3D(uWidth.Value / 2, uHeight.Value / 2, 0));
+        }
+        else {
+            rotationCenter = null;
+        }
+
+        // Left click handling - rotation is not allowed in this case
         let EventPixel: MapCore.SMcPoint = new MapCore.SMcPoint(e.offsetX!, e.offsetY!);
         mouseDownButtons = e.buttons;
         if (e.buttons === 1) {
