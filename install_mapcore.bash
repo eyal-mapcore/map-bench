@@ -12,6 +12,11 @@ fi
 
 JFROG_USERNAME='mapcore'
 
+if [ -z "$JFROG_TOKEN" ]; then
+    echo "JFROG_TOKEN is not set - please obtain a token from MapCore's JFrog repository and set the JFROG_TOKEN environment variable"
+    exit 1
+fi
+
 mkdir -p tmp/mapcore-install
 npm login --registry=https://mapcore.jfrog.io/artifactory/api/npm/npm/ --auth-type=web --scope=@mapcore --username=$JFROG_USERNAME --password=$JFROG_TOKEN
 npm install --prefix=tmp/mapcore-install MapCore_32@$VERSION --registry=https://mapcore.jfrog.io/artifactory/api/npm/npm/
