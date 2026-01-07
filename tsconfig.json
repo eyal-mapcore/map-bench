@@ -5,6 +5,7 @@
     "module": "ESNext",
     "target": "ES2020",
     "moduleResolution": "bundler",
+    "types": ["vite/client"],
     "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true

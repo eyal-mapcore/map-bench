@@ -115,7 +115,7 @@ Perform the following command:
    Perform the following bash commands:
    ``` bash
    export JFROG_TOKEN=your_jfrog_token (used by mapcore username)
-   ./install_mapcore.bash 12.4.0-MapBench-beta2
+   ./scripts/install_mapcore.bash 12.4.0-MapBench-beta2
    ```
 
 # WMTS LAYER SET
