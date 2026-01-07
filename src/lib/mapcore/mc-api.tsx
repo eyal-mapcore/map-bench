@@ -1,5 +1,5 @@
 /// <reference path="../../types/MapCore.d.ts"/>
-import React, { memo, useContext, useEffect, useRef, useState } from "react";
+import { memo, useContext, useEffect, useRef, useState } from "react";
 import MapCoreCallbacks, { CCameraUpdateCallback, CAsyncQueryCallback, CEditModeCallback, CAsyncOperationCallback }
     from './mc-callbacks';
 import { useGesture, PinchState, DragState } from '@use-gesture/react';
@@ -949,10 +949,10 @@ const MapCoreViewer = ({ action, cursorPos, crsUnits, availableGroups,
             return;
         }
 
-        let factor: number = (e.shiftKey ? 10 : 1);
+        let factor: number = (e.shiftKey ? 5 : 1);
 
         if (viewport.GetMapType() === MapCore.IMcMapCamera.EMapType.EMT_3D) {
-            viewport.MoveCameraRelativeToOrientation(new MapCore.SMcVector3D(0, wheelDelta / 8.0 * factor, 0), false);
+            viewport.MoveCameraRelativeToOrientation(new MapCore.SMcVector3D(0, wheelDelta * factor, 0), false);
         }
         else {
             let fScale: number = viewport.GetCameraScale();
